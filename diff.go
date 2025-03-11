@@ -1,4 +1,4 @@
-package main
+package temporal
 
 import (
 	"github.com/gabstv/go-bsdiff/pkg/bsdiff"
