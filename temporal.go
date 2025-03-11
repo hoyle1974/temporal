@@ -9,20 +9,40 @@ import (
 	"time"
 )
 
-type StorageManager struct {
-	storage     Storage
-	lock        sync.Mutex
-	lastWrite   time.Time
-	current     collated
-	lastFrame   Keyframe
-	currentSize int
-	minTime     time.Time
-	maxTime     time.Time
+type Config struct {
+	MaxFileSize   int
+	MaxDiffFrames int
 }
 
-func NewStorageManager(storage Storage) (*StorageManager, error) {
+func DefaultConfig() Config {
+	return Config{
+		MaxFileSize:   8 * 1024 * 1024,
+		MaxDiffFrames: 599,
+	}
+}
+
+type StorageManager struct {
+	storage      Storage
+	lock         sync.Mutex
+	lastWrite    time.Time
+	current      collated
+	lastFrame    Keyframe
+	currentSize  int
+	minTime      time.Time
+	maxTime      time.Time
+	maxFileSize  int
+	maxDiffFrame int
+}
+
+func NewStorageManager(storage Storage, config ...Config) (*StorageManager, error) {
+	cfg := DefaultConfig()
+	if len(config) > 0 {
+		cfg = config[0]
+	}
 	sm := &StorageManager{
-		storage: storage,
+		storage:      storage,
+		maxFileSize:  cfg.MaxFileSize,
+		maxDiffFrame: cfg.MaxDiffFrames,
 	}
 
 	startBin, err := storage.Read(context.Background(), "start.idx")
@@ -97,7 +117,7 @@ func (s *StorageManager) WriteData(ctx context.Context, timestamp time.Time, dat
 	s.currentSize += len(diff)
 	s.lastWrite = timestamp
 
-	if s.currentSize > 8*1024*1024 || len(s.current.Diffs) > 599 {
+	if s.currentSize > s.maxFileSize || len(s.current.Diffs) > s.maxDiffFrame {
 		// Write this and create a new keyframe
 		key := fmt.Sprintf("%04d/%02d/%02d/%s.chunk",
 			s.current.Timestamp.Year(),
