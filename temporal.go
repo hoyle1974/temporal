@@ -2,7 +2,9 @@ package temporal
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 )
@@ -24,9 +26,8 @@ func NewStorageManager(storage Storage) (*StorageManager, error) {
 	}
 
 	startBin, err := storage.Read(context.Background(), "start.idx")
-	if err != nil {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
-
 	}
 	if startBin != nil {
 		startTimeKey := string(startBin)
