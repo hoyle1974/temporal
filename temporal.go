@@ -61,6 +61,7 @@ func (s *StorageManager) WriteData(ctx context.Context, timestamp time.Time, dat
 	timestamp = timestamp.UTC()
 
 	timestamp = timestamp.Truncate(time.Second)
+	s.maxTime = timestamp
 
 	if s.minTime.IsZero() {
 		s.minTime = timestamp
