@@ -22,4 +22,5 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.78.1
 	github.com/gabstv/go-bsdiff v1.0.5
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
+	github.com/patrickmn/go-cache v2.1.0+incompatible
 )

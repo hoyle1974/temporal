@@ -3,6 +3,7 @@ package temporal
 import (
 	"bytes"
 	"encoding/gob"
+	"weak"
 )
 
 func encodeToBytes(obj any) ([]byte, error) {
@@ -30,16 +31,20 @@ func copyBytes(a []byte) []byte {
 	return b
 }
 
-func collateData(dataToCollate [][]byte, c collated) collated {
+func collateData(dataToCollate []Keyframe, c collated) collated {
 	c.Keyframe = copyBytes(dataToCollate[0])
-	c.Diffs = make([]Diff, len(dataToCollate)-1)
+	c.Diffs = make([]DiffAndCache, len(dataToCollate)-1)
 
 	for idx := 1; idx < len(dataToCollate); idx++ {
 		diff, err := generateDiff(dataToCollate[idx-1], dataToCollate[idx])
 		if err != nil {
 			return c
 		}
-		c.Diffs[idx-1] = diff
+
+		c.Diffs[idx-1] = DiffAndCache{
+			Diff: diff,
+			orig: weak.Make(&dataToCollate[idx]),
+		}
 	}
 
 	return c

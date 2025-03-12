@@ -9,7 +9,7 @@ import (
 
 func TestCollation(t *testing.T) {
 
-	data := make([][]byte, 60)
+	data := make([]Keyframe, 60)
 	for idx := 0; idx < 60; idx++ {
 		data[idx] = []byte(fmt.Sprintf("data [%d]", idx))
 	}
@@ -25,7 +25,7 @@ func TestCollation(t *testing.T) {
 			t.Fatalf("Can't get frame %d", idx)
 		}
 		if string(b) != a {
-			t.Fatalf("Frame didn't match, got %s but expected %s for frame %d", string(b), a, idx)
+			t.Fatalf("Frame didn't match, got '%s' but expected '%s' for frame %d", string(b), a, idx)
 		}
 	}
 
@@ -49,16 +49,15 @@ func TestWriteData(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < reps; i += 3 {
+	for i := 0; i < reps; i++ {
 		data := []byte(fmt.Sprintf("test data %d", i))
-
 		temp, err := manager.ReadData(context.Background(), now.Add(time.Duration(i)*time.Second))
 		if err != nil {
 			t.Fatalf("Failed to read data (i=%d): %v", i, err)
 		}
 
 		if string(data) != string(temp) {
-			t.Fatalf("Retrieved data does not match written data. Expected: %s, Got: %s", string(data), string(temp))
+			t.Fatalf("Retrieved data does not match written data. Expected: '%s', Got: '%s' for idx=%d", string(data), string(temp), i)
 		}
 	}
 
