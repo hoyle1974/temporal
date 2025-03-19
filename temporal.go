@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
-	"weak"
 
+	"github.com/alitto/pond/v2"
+	"github.com/hoyle1974/temporal/misc"
+	"github.com/hoyle1974/temporal/storage"
 	"github.com/patrickmn/go-cache"
 )
 
@@ -25,21 +28,21 @@ func DefaultConfig() Config {
 }
 
 type StorageManager struct {
-	storage      Storage
+	storage      storage.System
 	lock         sync.Mutex
 	lastWrite    time.Time
 	current      collated
 	lastFrame    Keyframe
-	currentSize  int
+	currentSize  atomic.Int64
 	minTime      time.Time
 	maxTime      time.Time
 	maxFileSize  int
 	maxDiffFrame int
-	cache1       *cache.Cache
-	cache2       *cache.Cache
+	chunkCache   *cache.Cache
+	pool         pond.Pool
 }
 
-func NewStorageManager(storage Storage, config ...Config) (*StorageManager, error) {
+func NewStorageManager(storage storage.System, config ...Config) (*StorageManager, error) {
 	cfg := DefaultConfig()
 	if len(config) > 0 {
 		cfg = config[0]
@@ -48,8 +51,8 @@ func NewStorageManager(storage Storage, config ...Config) (*StorageManager, erro
 		storage:      storage,
 		maxFileSize:  cfg.MaxFileSize,
 		maxDiffFrame: cfg.MaxDiffFrames,
-		cache1:       cache.New(5*time.Minute, 10*time.Minute),
-		cache2:       cache.New(5*time.Minute, 10*time.Minute),
+		chunkCache:   cache.New(5*time.Minute, 10*time.Minute),
+		pool:         pond.NewPool(16),
 	}
 
 	startBin, err := storage.Read(context.Background(), "start.idx")
@@ -71,6 +74,17 @@ func NewStorageManager(storage Storage, config ...Config) (*StorageManager, erro
 	sm.maxTime = time.Now().UTC().Truncate(time.Second)
 
 	return sm, nil
+}
+
+func (s *StorageManager) PrintStats() {
+	s.ReadData(context.Background(), s.minTime)
+
+	timestamp := s.minTime
+	key := fmt.Sprintf("%04d/%02d/%02d/%s.chunk", timestamp.Year(), timestamp.Month(), timestamp.Day(), timestamp.Format("20060102_150405"))
+
+	if val, ok := s.chunkCache.Get(key); ok {
+		val.(*collated).PrintStats()
+	}
 }
 
 func (s *StorageManager) BeginIngest(dataIngest func() []byte) {
@@ -96,6 +110,39 @@ func (s *StorageManager) GetMinMaxTime() (time.Time, time.Time) {
 	return s.minTime, s.maxTime
 }
 
+func (s *StorageManager) Flush(ctx context.Context) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	return s.flush(ctx)
+}
+
+func (s *StorageManager) flush(ctx context.Context) error {
+	// Write this and create a new keyframe
+	key := fmt.Sprintf("%04d/%02d/%02d/%s.chunk", s.current.Timestamp.Year(), s.current.Timestamp.Month(), s.current.Timestamp.Day(), s.current.Timestamp.Format("20060102_150405"))
+
+	s.pool.StopAndWait()
+	s.pool = pond.NewPool(16)
+
+	// Wrap everything with a cache
+	for idx, d := range s.current.Diffs {
+		s.current.Diffs[idx] = UnwrapCache(d)
+	}
+	b, err := misc.EncodeToBytes(s.current)
+	if err != nil {
+		return err
+	}
+
+	err = s.storage.Write(ctx, key, b)
+	if err != nil {
+		return err
+	}
+
+	s.current = collated{}
+	s.currentSize.Swap(0)
+
+	return nil
+}
+
 // Writes data with a timestamp to the store.  Each write must have a timestamp that is increasing
 // by a second from the previous
 func (s *StorageManager) WriteData(ctx context.Context, timestamp time.Time, data []byte) error {
@@ -119,10 +166,10 @@ func (s *StorageManager) WriteData(ctx context.Context, timestamp time.Time, dat
 		// This is the start of writing data, so we will take this as a keyframe
 		s.current.Timestamp = timestamp
 		s.current.Keyframe = data
-		s.current.Diffs = []DiffAndCache{}
+		s.current.Diffs = []DiffFrame{}
 		s.lastWrite = timestamp
 		s.lastFrame = s.current.Keyframe
-		s.currentSize += len(data)
+		s.currentSize.Add(int64(len(data)))
 		return nil
 	}
 
@@ -131,42 +178,17 @@ func (s *StorageManager) WriteData(ctx context.Context, timestamp time.Time, dat
 		return fmt.Errorf("not enough time has passed to write new data: %v", d)
 	}
 
-	diff, err := generateDiff(s.lastFrame, data)
-	if err != nil {
-		return err
-	}
-	s.lastFrame = data
+	idx := len(s.current.Diffs)
+	diff1 := NewDiffFrame1(data)
+	s.current.Diffs = append(s.current.Diffs, &diff1)
 
-	var k Keyframe = copyBytes(data)
-	s.current.Diffs = append(s.current.Diffs,
-		DiffAndCache{
-			Diff: diff,
-			orig: weak.Make(&k),
-		},
-	)
-	s.currentSize += len(diff)
+	diff1.Convert(s.pool, idx, &s.current, s.lastFrame)
+	s.lastFrame = data
 	s.lastWrite = timestamp
 
-	if s.currentSize > s.maxFileSize || len(s.current.Diffs) > s.maxDiffFrame {
+	if int(s.currentSize.Load()) > s.maxFileSize || len(s.current.Diffs) > s.maxDiffFrame {
 		// Write this and create a new keyframe
-		key := fmt.Sprintf("%04d/%02d/%02d/%s.chunk",
-			s.current.Timestamp.Year(),
-			s.current.Timestamp.Month(),
-			s.current.Timestamp.Day(),
-			s.current.Timestamp.Format("20060102_150405"))
-
-		b, err := encodeToBytes(s.current)
-		if err != nil {
-			return err
-		}
-
-		err = s.storage.Write(ctx, key, b)
-		if err != nil {
-			return err
-		}
-
-		s.current = collated{}
-		s.currentSize = 0
+		return s.flush(ctx)
 	}
 
 	return nil
@@ -175,45 +197,55 @@ func (s *StorageManager) WriteData(ctx context.Context, timestamp time.Time, dat
 func (s *StorageManager) ReadData(ctx context.Context, timestamp time.Time) ([]byte, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	timestamp = timestamp.UTC()
+	// Convert the timestamp UTC for sanity and truncated at the second
+	timestamp = timestamp.UTC().Truncate(time.Second)
+	originalTimestamp := timestamp
 
-	trunc := timestamp.Truncate(time.Second)
-	origTrunc := trunc
+	// Make a copy of the original timestamp, this one we will modify
+	origTruncKey := fmt.Sprintf("%04d/%02d/%02d/%s.chunk", timestamp.Year(), timestamp.Month(), timestamp.Day(), timestamp.Format("20060102_150405"))
 
-	if trunc.Equal(s.current.Timestamp) || trunc.After(s.current.Timestamp) {
+	if !s.current.Timestamp.IsZero() && (timestamp.Equal(s.current.Timestamp) || timestamp.After(s.current.Timestamp)) {
 		return s.current.getFrame(timestamp)
 	}
 
-	if adjust, ok := s.cache1.Get(origTrunc.String()); ok {
-		trunc = adjust.(time.Time)
-	}
-
 	for {
-		truncKey := fmt.Sprintf("%04d/%02d/%02d/%s.chunk",
-			trunc.Year(),
-			trunc.Month(),
-			trunc.Day(),
-			trunc.Format("20060102_150405"))
+		// The key to look for the chunk
+		truncKey := fmt.Sprintf("%04d/%02d/%02d/%s.chunk", timestamp.Year(), timestamp.Month(), timestamp.Day(), timestamp.Format("20060102_150405"))
 
-		if cached, ok := s.cache2.Get(truncKey); ok {
+		// chunk cache
+		if cached, ok := s.chunkCache.Get(truncKey); ok {
+			// Make a note we found the chunk for 'origTimestamp' at 'timestamp'
 			c := cached.(*collated)
-			return c.getFrame(timestamp)
+			s.chunkCache.Set(origTruncKey, c, time.Minute)
+			return c.getFrame(originalTimestamp)
 		}
 
+		// Read the key from disk
 		data, _ := s.storage.Read(ctx, truncKey)
 		if data != nil {
-			s.cache1.Set(origTrunc.String(), trunc, time.Hour)
-
-			c, err := decodeToStruct(data)
+			var c collated
+			err := misc.DecodeFromBytes(data, &c)
 			if err != nil {
 				return nil, err
 			}
-
-			s.cache2.Set(truncKey, c, time.Minute)
-
-			return c.getFrame(timestamp)
+			// Wrap everything with a cache
+			for idx, d := range c.Diffs {
+				c.Diffs[idx] = WrapWithCache(d, nil)
+			}
+			go func() {
+				// Iterate and cache the data
+				k := c.Keyframe
+				for _, d := range c.Diffs {
+					k = d.GetKeyframe(k)
+				}
+			}()
+			// Cache the decoded structure for future use
+			s.chunkCache.Set(origTruncKey, c, time.Minute)
+			return c.getFrame(originalTimestamp)
 		}
-		trunc = trunc.Add(-time.Second)
+
+		// Go back in time 1 second and try again
+		timestamp = timestamp.Add(-time.Second)
 	}
 
 }

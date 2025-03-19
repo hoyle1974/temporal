@@ -2,8 +2,6 @@ module github.com/hoyle1974/temporal
 
 go 1.24
 
-require github.com/aws/aws-sdk-go v1.55.6
-
 require (
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.10 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.34 // indirect
@@ -18,9 +16,10 @@ require (
 )
 
 require (
+	github.com/alitto/pond/v2 v2.2.0
 	github.com/aws/aws-sdk-go-v2 v1.36.3
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.78.1
 	github.com/gabstv/go-bsdiff v1.0.5
-	github.com/jmespath/go-jmespath v0.4.0 // indirect
+	github.com/google/uuid v1.6.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 )
