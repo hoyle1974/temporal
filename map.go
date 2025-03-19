@@ -54,6 +54,13 @@ type temporalMap struct {
 }
 
 func NewMap(storage storage.System) (ReadWriteMap, error) {
+	return NewMapWithConfig(storage, -1)
+}
+
+func NewMapWithConfig(storage storage.System, maxSinkSize int64) (ReadWriteMap, error) {
+	if maxSinkSize == -1 {
+		maxSinkSize = 8 * 1024 * 1024
+	}
 
 	// Build/Load indexes
 	index, err := chunks.NewChunkIndex(storage)
@@ -75,7 +82,7 @@ func NewMap(storage storage.System) (ReadWriteMap, error) {
 	return &temporalMap{
 		storage:   storage,
 		index:     index,
-		eventSink: events.NewSink(storage),
+		eventSink: events.NewSink(storage, index, maxSinkSize),
 		data:      keys,
 		current:   time.Now(),
 	}, nil

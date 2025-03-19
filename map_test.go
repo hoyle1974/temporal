@@ -242,7 +242,9 @@ func TestMap5(t *testing.T) {
 
 func Benchmark1(b *testing.B) {
 	s := storage.NewMemoryStorage()
-	// s := storage.NewDiskStorage("data")
+	//os.RemoveAll("data")
+	//os.MkdirAll("data", os.ModeDir|0755)
+	//s := storage.NewDiskStorage("data")
 	m, err := NewMap(s)
 	if err != nil {
 		b.Fatalf("could not create map: %v", err)
@@ -252,7 +254,7 @@ func Benchmark1(b *testing.B) {
 	}
 
 	start := time.Now()
-	items := 10000
+	items := 1000
 	for idx := range items {
 		key := fmt.Sprintf("key%d", idx)
 		m.Set(context.Background(), start, key, []byte(uuid.NewString()))
@@ -295,6 +297,36 @@ func Benchmark1(b *testing.B) {
 		if len(state) == 0 {
 			b.Fatalf("state was empty")
 		}
+	}
+
+	chunks.PrintCacheStats()
+
+}
+
+func Benchmark2(b *testing.B) {
+	s := storage.NewMemoryStorage()
+	// os.RemoveAll("data")
+	// os.MkdirAll("data", os.ModeDir|0755)
+	// s := storage.NewDiskStorage("data")
+
+	m, err := NewMapWithConfig(s, 1024*1024)
+	if err != nil {
+		b.Fatalf("could not create map: %v", err)
+	}
+	if m == nil {
+		b.Fatalf("map was nil")
+	}
+
+	start := time.Now()
+	items := 1000
+	for idx := range items {
+		key := fmt.Sprintf("key%d", idx)
+		m.Set(context.Background(), start, key, []byte(uuid.NewString()))
+	}
+
+	for _ = range 100000 * b.N {
+		key := fmt.Sprintf("key%d", rand.Int()%items)
+		m.Set(context.Background(), time.Now(), key, []byte(uuid.NewString()))
 	}
 
 	chunks.PrintCacheStats()

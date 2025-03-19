@@ -21,6 +21,8 @@ func NewDiskStorage(baseDir string) *diskStorage {
 func (ds *diskStorage) GetKeysWithPrefix(ctx context.Context, prefix string) ([]string, error) {
 	var matchedFiles []string
 
+	searchPrefix := filepath.Join(ds.BaseDir, prefix)
+
 	// Walk through all files and directories
 	err := filepath.WalkDir(ds.BaseDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -28,8 +30,8 @@ func (ds *diskStorage) GetKeysWithPrefix(ctx context.Context, prefix string) ([]
 		}
 
 		// Check if it's a file and starts with the prefix
-		if !d.IsDir() && strings.HasPrefix(d.Name(), prefix) {
-			matchedFiles = append(matchedFiles, path)
+		if !d.IsDir() && strings.HasPrefix(path, searchPrefix) {
+			matchedFiles = append(matchedFiles, path[len(ds.BaseDir)+1:])
 		}
 		return nil
 	})

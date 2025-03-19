@@ -13,6 +13,8 @@ import (
 	"github.com/hoyle1974/temporal/storage"
 )
 
+const layout = "20060102_150405.000000000"
+
 type Sink interface {
 	Append(event Event) error
 }
@@ -23,7 +25,12 @@ type Index interface {
 }
 
 type sink struct {
-	writer storage.StreamWriter
+	key               string
+	store             storage.System
+	index             Index
+	totalBytesWritten int64
+	writer            storage.StreamWriter
+	maxSinkSize       int64
 }
 
 // Append implements Sink.
@@ -45,17 +52,48 @@ func (s *sink) Append(event Event) error {
 		return errors.New("could not write all data to the file")
 	}
 
+	s.totalBytesWritten += int64(bytesWritten)
+
+	if s.totalBytesWritten > s.maxSinkSize {
+		// Chunk this and start a new event stream
+		err = s.FlushSink(event.Timestamp)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
-func NewSink(s storage.System) Sink {
+func NewSink(s storage.System, i Index, maxSinkSize int64) Sink {
 	t := time.Now().UTC()
-	formatted := t.Format("20060102_150405_000000000")
+
+	formatted := t.Format(layout)
 	key := "events/" + formatted + ".events"
 
 	writer := s.BeginStream(context.Background(), key)
 
-	return &sink{writer: writer}
+	return &sink{key: key, writer: writer, store: s, index: i, maxSinkSize: maxSinkSize}
+}
+
+func (s *sink) FlushSink(timestamp time.Time) error {
+	err := s.writer.Close()
+	if err != nil {
+		return err
+	}
+
+	err = processOldSinks(s.store, s.index, []string{s.key})
+	if err != nil {
+		return err
+	}
+
+	formatted := timestamp.UTC().Add(time.Nanosecond).Format(layout)
+	key := "events/" + formatted + ".events"
+	s.writer = s.store.BeginStream(context.Background(), key)
+	s.totalBytesWritten = 0
+	s.key = key
+
+	return nil
 }
 
 func ProcessOldSinks(s storage.System, index Index) error {
@@ -68,6 +106,11 @@ func ProcessOldSinks(s storage.System, index Index) error {
 	if len(keys) == 0 {
 		return nil
 	}
+
+	return processOldSinks(s, index, keys)
+}
+
+func processOldSinks(s storage.System, index Index, keys []string) error {
 
 	var events []Event
 
@@ -152,19 +195,4 @@ func ProcessOldSinks(s storage.System, index Index) error {
 	}
 
 	return nil
-}
-
-type Event struct {
-	Timestamp time.Time
-	Key       string
-	Data      []byte
-	Delete    bool
-}
-
-func (e Event) Apply(ret map[string][]byte) {
-	if e.Delete {
-		delete(ret, e.Key)
-	} else {
-		ret[e.Key] = e.Data
-	}
 }

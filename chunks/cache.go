@@ -8,7 +8,7 @@ import (
 	"github.com/patrickmn/go-cache"
 )
 
-var chunkCache = cache.New(5*time.Minute, time.Hour)
+var chunkCache = cache.New(time.Minute, time.Minute)
 
 type CacheStats struct {
 	Hits   atomic.Int64
@@ -37,5 +37,5 @@ func PrintCacheStats() {
 
 func ClearCache() {
 	chunkCacheStats.Reset()
-	chunkCache = cache.New(5*time.Minute, time.Hour)
+	chunkCache = cache.New(time.Minute, time.Minute)
 }
