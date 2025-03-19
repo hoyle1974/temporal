@@ -4,14 +4,21 @@ import (
 	"context"
 	"errors"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/hoyle1974/temporal/storage"
 )
 
+type Index interface {
+	UpdateIndex(header Header) error
+	findHeaderResponsibleFor(timestamp time.Time) (Header, error)
+	GetStateAt(timestamp time.Time) (map[string][]byte, error)
+}
+
 // The chunk index manages all the chunks
-type Index struct {
+type index struct {
 	lock    sync.Mutex
 	storage storage.System
 	headers []Header
@@ -20,7 +27,7 @@ type Index struct {
 
 func NewChunkIndex(storage storage.System) (Index, error) {
 
-	ci := Index{storage: storage, headers: []Header{}}
+	ci := &index{storage: storage, headers: []Header{}}
 
 	// If start.idx doesn't exist, then we never started
 	startBin, err := storage.Read(context.Background(), "start.idx")
@@ -58,7 +65,7 @@ func NewChunkIndex(storage storage.System) (Index, error) {
 	return ci, nil
 }
 
-func (ci *Index) UpdateIndex(header Header) error {
+func (ci *index) UpdateIndex(header Header) error {
 	ci.lock.Lock()
 	defer ci.lock.Unlock()
 
@@ -72,10 +79,35 @@ func (ci *Index) UpdateIndex(header Header) error {
 
 	ci.headers = append(ci.headers, header)
 
+	// Sort all the events
+	sort.Slice(ci.headers, func(i, j int) bool {
+		return ci.headers[i].Min.Before(ci.headers[j].Min)
+	})
+
+	// Stich them together if needed
+	modified := map[int]any{}
+	for idx, _ := range ci.headers {
+		if ci.headers[idx].Next == "" && idx+1 < len(ci.headers) {
+			ci.headers[idx].Next = ci.headers[idx+1].Id
+			modified[idx] = true
+		}
+		if ci.headers[idx].Prev == "" && idx > 0 {
+			ci.headers[idx].Prev = ci.headers[idx-1].Id
+			modified[idx] = true
+		}
+	}
+	for idx, _ := range modified {
+		err := ci.headers[idx].Save(context.Background(), ci.storage)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
-func (ci *Index) findHeaderResponsibleFor(timestamp time.Time) (Header, error) {
+/*
+func (ci *index) findHeaderResponsibleFor(timestamp time.Time) (Header, error) {
 	ci.lock.Lock()
 	defer ci.lock.Unlock()
 
@@ -86,16 +118,69 @@ func (ci *Index) findHeaderResponsibleFor(timestamp time.Time) (Header, error) {
 		return ci.headers[len(ci.headers)-1], nil
 	}
 
-	for _, h := range ci.headers {
-		if h.ResponsibleFor(timestamp) {
-			return h, nil
+	for idx := range len(ci.headers) - 1 {
+		start := ci.headers[idx].Min
+		end := ci.headers[idx+1].Min
+
+		if (timestamp.After(start) || timestamp.Equal(start)) && timestamp.Before(end) {
+			return ci.headers[idx], nil
 		}
 	}
 
 	return Header{}, errors.New("no header found")
 }
+*/
 
-func (ci *Index) GetStateAt(timestamp time.Time) (map[string][]byte, error) {
+func (ci *index) findHeaderResponsibleFor(timestamp time.Time) (Header, error) {
+	ci.lock.Lock()
+	defer ci.lock.Unlock()
+
+	n := len(ci.headers)
+	if n == 0 {
+		return Header{}, nil
+	}
+
+	// Handle the case where the timestamp is after the last header's Min
+	if timestamp.After(ci.headers[n-1].Min) {
+		return ci.headers[n-1], nil
+	}
+
+	// Binary search
+	idx := sort.Search(n-1, func(i int) bool {
+		// We are looking for the first header whose Min is after or equal to the timestamp.
+		// However, we need the *previous* header.
+		return ci.headers[i+1].Min.After(timestamp)
+	})
+
+	if idx < 0 {
+		// This should ideally not happen given the check for empty headers
+		// and the check for timestamp after the last header.
+		return Header{}, errors.New("no header found (index < 0)")
+	}
+
+	// Check if the found header (at index idx) is responsible
+	start := ci.headers[idx].Min
+	var end time.Time
+	if idx+1 < n {
+		end = ci.headers[idx+1].Min
+	} else {
+		// This case should have been handled by the initial 'timestamp.After' check
+		return Header{}, errors.New("logic error: should not reach here for end time")
+	}
+
+	if (timestamp.After(start) || timestamp.Equal(start)) && timestamp.Before(end) {
+		return ci.headers[idx], nil
+	}
+
+	// Special case for the very first header
+	if idx == 0 && (timestamp.Before(ci.headers[0].Min) || timestamp.Equal(ci.headers[0].Min)) {
+		return ci.headers[0], nil
+	}
+
+	return Header{}, errors.New("no header found")
+}
+
+func (ci *index) GetStateAt(timestamp time.Time) (map[string][]byte, error) {
 	if ci.minTime.IsZero() {
 		return map[string][]byte{}, nil
 	}

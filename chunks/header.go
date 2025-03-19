@@ -2,10 +2,12 @@ package chunks
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/hoyle1974/temporal/misc"
 	"github.com/hoyle1974/temporal/storage"
+	"github.com/patrickmn/go-cache"
 )
 
 // This reprsents a chunk of data that would be stored on disk
@@ -30,6 +32,13 @@ func LoadHeader(ctx context.Context, s storage.System, id ChunkId) (Header, erro
 }
 
 func (h Header) ResponsibleFor(timestamp time.Time) bool {
+	a := timestamp.UnixMilli()
+	b := h.Min.UnixMilli()
+	c := h.Max.UnixMilli()
+	if a == b {
+		fmt.Println(a, b, c)
+	}
+
 	if (timestamp.Equal(h.Min) || timestamp.After(h.Min)) && (timestamp.Equal(h.Min) || timestamp.Before(h.Max)) {
 		return true
 	}
@@ -38,6 +47,15 @@ func (h Header) ResponsibleFor(timestamp time.Time) bool {
 
 // Saves a header to the storage system
 func (h Header) Save(ctx context.Context, s storage.System) error {
+	if h.LastUpdate.IsZero() {
+		panic("h.LastUpdate was zero")
+	}
+	if h.Min.IsZero() {
+		panic("h.LastUpdate was zero")
+	}
+	if h.Max.IsZero() {
+		panic("h.LastUpdate was zero")
+	}
 	b, err := misc.EncodeToBytes(h)
 	if err != nil {
 		return err
@@ -47,16 +65,28 @@ func (h Header) Save(ctx context.Context, s storage.System) error {
 
 // Loads the chunk associated with this header
 func (h Header) LoadChunk(ctx context.Context, s storage.System) (Chunk, error) {
+	if chunk, ok := chunkCache.Get(string(h.Id)); ok {
+		chunkCacheStats.Hit()
+		return chunk.(Chunk), nil
+	} else {
+		chunkCacheStats.Miss()
+	}
+
 	var cd ChunkData
 	b, err := s.Read(ctx, h.Id.ChunkKey())
 	if err != nil {
+		chunkCache.Set(string(h.Id), Chunk{}, cache.DefaultExpiration)
 		return Chunk{}, err
 	}
 
 	err = misc.DecodeFromBytes(b, &cd) // This might come to bite me in the future
 	if err != nil {
+		chunkCache.Set(string(h.Id), Chunk{}, cache.DefaultExpiration)
 		return Chunk{}, err
 	}
 
-	return Chunk{Header: h, Data: cd}, nil
+	chunk := Chunk{Header: h, Data: cd}
+	chunkCache.Set(string(h.Id), chunk, cache.DefaultExpiration)
+
+	return chunk, nil
 }

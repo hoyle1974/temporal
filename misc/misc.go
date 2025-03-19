@@ -3,6 +3,8 @@ package misc
 import (
 	"bytes"
 	"encoding/gob"
+	"fmt"
+	"math/rand"
 	"time"
 )
 
@@ -101,4 +103,21 @@ func minMaxTime(min time.Time, max time.Time, newTime time.Time) (time.Time, tim
 
 	return min, max
 
+}
+
+func RandomTimeBetween(start, end time.Time) (time.Time, error) {
+	if end.Before(start) {
+		return time.Time{}, fmt.Errorf("end time must be after start time")
+	}
+
+	// Calculate the duration between the two times.
+	duration := end.Sub(start)
+
+	// Generate a random duration within the total duration.
+	randomDuration := time.Duration(rand.Int63n(duration.Nanoseconds()))
+
+	// Add the random duration to the start time.
+	randomTime := start.Add(randomDuration)
+
+	return randomTime, nil
 }

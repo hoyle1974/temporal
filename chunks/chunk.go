@@ -46,6 +46,9 @@ type Chunk struct {
 }
 
 func (c *Chunk) ApplyEvent(e Event) {
+	if c.Header.Max.Before(e.Timestamp) {
+		c.Header.Max = e.Timestamp
+	}
 	c.Data.Events = append(c.Data.Events, e)
 }
 
@@ -64,6 +67,7 @@ func NewChunk(timestamp time.Time) *Chunk {
 		LastUpdate: time.Now().UTC(),
 		Id:         chunkId,
 		Min:        timestamp,
+		Max:        timestamp,
 	}
 
 	data := ChunkData{
@@ -80,6 +84,8 @@ func NewChunk(timestamp time.Time) *Chunk {
 // Saves a header to the storage system
 func (c Chunk) Save(ctx context.Context, s storage.System) error {
 	c.Header.Save(ctx, s)
+
+	chunkCache.Set(string(c.Header.Id), c, time.Minute)
 
 	b, err := misc.EncodeToBytes(c.Data)
 	if err != nil {

@@ -45,7 +45,7 @@ have written 8mb, we start a new file.
 */
 type temporalMap struct {
 	lock      sync.Mutex
-	index     *chunks.Index
+	index     chunks.Index
 	storage   storage.System
 	eventSink events.Sink
 	current   time.Time
@@ -62,7 +62,7 @@ func NewMap(storage storage.System) (ReadWriteMap, error) {
 	}
 
 	// Load current events in the event synk
-	err = events.ProcessOldSinks(storage, &index)
+	err = events.ProcessOldSinks(storage, index)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func NewMap(storage storage.System) (ReadWriteMap, error) {
 
 	return &temporalMap{
 		storage:   storage,
-		index:     &index,
+		index:     index,
 		eventSink: events.NewSink(storage),
 		data:      keys,
 		current:   time.Now(),

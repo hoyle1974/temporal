@@ -2,9 +2,14 @@ package temporal
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/hoyle1974/temporal/chunks"
+	"github.com/hoyle1974/temporal/misc"
 	"github.com/hoyle1974/temporal/storage"
 )
 
@@ -233,4 +238,65 @@ func TestMap5(t *testing.T) {
 	if string(temp) != "bar" {
 		t.Fatalf("wrong value: %s", string(temp))
 	}
+}
+
+func Benchmark1(b *testing.B) {
+	s := storage.NewMemoryStorage()
+	// s := storage.NewDiskStorage("data")
+	m, err := NewMap(s)
+	if err != nil {
+		b.Fatalf("could not create map: %v", err)
+	}
+	if m == nil {
+		b.Fatalf("map was nil")
+	}
+
+	start := time.Now()
+	items := 10000
+	for idx := range items {
+		key := fmt.Sprintf("key%d", idx)
+		m.Set(context.Background(), start, key, []byte(uuid.NewString()))
+	}
+
+	for _ = range 100000 {
+		key := fmt.Sprintf("key%d", rand.Int()%items)
+		m.Set(context.Background(), time.Now(), key, []byte(uuid.NewString()))
+
+		if rand.Int()%1000 == 0 {
+			m, err = NewMap(s)
+			if err != nil {
+				b.Fatalf("could not create map: %v", err)
+			}
+			if m == nil {
+				b.Fatalf("map was nil")
+			}
+		}
+	}
+	end := time.Now()
+
+	m, err = NewMap(s)
+	if err != nil {
+		b.Fatalf("could not create map: %v", err)
+	}
+	if m == nil {
+		b.Fatalf("map was nil")
+	}
+
+	chunks.ClearCache()
+	b.ResetTimer()
+
+	fmt.Println(b.N)
+	for i := 0; i < b.N; i++ {
+		r, _ := misc.RandomTimeBetween(start, end)
+		state, err := m.GetAll(context.Background(), r)
+		if err != nil {
+			b.Fatalf("Error getting all: %v (%v %v %v)", err, r, start, end)
+		}
+		if len(state) == 0 {
+			b.Fatalf("state was empty")
+		}
+	}
+
+	chunks.PrintCacheStats()
+
 }
