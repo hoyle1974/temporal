@@ -2,6 +2,7 @@ package misc
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/gob"
 	"fmt"
 	"math/rand"
@@ -29,21 +30,36 @@ func DecodeToStruct(data []byte) (*collated, error) {
 }
 */
 
+// EncodeToBytes compresses and serializes the data
 func EncodeToBytes(data interface{}) ([]byte, error) {
 	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
+	gz := gzip.NewWriter(&buf)
+	enc := gob.NewEncoder(gz)
+
 	err := enc.Encode(data)
 	if err != nil {
 		return nil, err
 	}
+
+	err = gz.Close() // Ensure all data is flushed
+	if err != nil {
+		return nil, err
+	}
+
 	return buf.Bytes(), nil
 }
 
+// DecodeFromBytes decompresses and deserializes the data
 func DecodeFromBytes(data []byte, a any) error {
 	buf := bytes.NewBuffer(data)
-	dec := gob.NewDecoder(buf)
-	err := dec.Decode(a)
-	return err
+	gz, err := gzip.NewReader(buf)
+	if err != nil {
+		return err
+	}
+	defer gz.Close()
+
+	dec := gob.NewDecoder(gz)
+	return dec.Decode(a)
 }
 
 func CopyBytes(a []byte) []byte {

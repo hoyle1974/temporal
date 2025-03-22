@@ -159,15 +159,17 @@ func processOldSinks(s storage.System, index Index, keys []string) error {
 		buildKeyframe := true
 
 		chunk := chunks.NewChunk(start)
+		var keyFrame chunks.KeyFrame
+		toFinish := []chunks.Event{}
 		for _, e := range events {
 			if buildKeyframe && e.Timestamp != start {
 				buildKeyframe = false
-				chunk.SetKeyframe(state)
+				keyFrame = chunks.NewKeyFrame(state)
 			}
 			if e.Timestamp == start {
 				e.Apply(state)
 			} else {
-				chunk.ApplyEvent(chunks.Event{
+				toFinish = append(toFinish, chunks.Event{
 					Timestamp: e.Timestamp,
 					Key:       e.Key,
 					Data:      e.Data,
@@ -176,8 +178,9 @@ func processOldSinks(s storage.System, index Index, keys []string) error {
 			}
 		}
 		if buildKeyframe {
-			chunk.SetKeyframe(state)
+			keyFrame = chunks.NewKeyFrame(state)
 		}
+		chunk.Finish(keyFrame, toFinish)
 
 		err := chunk.Save(context.Background(), s)
 		if err != nil {

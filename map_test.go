@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
 	"testing"
 	"time"
 
@@ -304,12 +305,12 @@ func Benchmark1(b *testing.B) {
 }
 
 func Benchmark2(b *testing.B) {
-	s := storage.NewMemoryStorage()
-	// os.RemoveAll("data")
-	// os.MkdirAll("data", os.ModeDir|0755)
-	// s := storage.NewDiskStorage("data")
+	// s := storage.NewMemoryStorage()
+	os.RemoveAll("data")
+	os.MkdirAll("data", os.ModeDir|0755)
+	s := storage.NewDiskStorage("data")
 
-	m, err := NewMapWithConfig(s, 1024*1024)
+	m, err := NewMapWithConfig(s, 4*8*1024*1024)
 	if err != nil {
 		b.Fatalf("could not create map: %v", err)
 	}
@@ -317,18 +318,25 @@ func Benchmark2(b *testing.B) {
 		b.Fatalf("map was nil")
 	}
 
+	temp := 0
+
 	start := time.Now()
 	items := 1000
 	for idx := range items {
 		key := fmt.Sprintf("key%d", idx)
-		m.Set(context.Background(), start, key, []byte(uuid.NewString()))
+		b := []byte(uuid.NewString())
+		m.Set(context.Background(), start, key, b)
+		temp += len(key) + len(b)
 	}
 
-	for _ = range 100000 * b.N {
+	for _ = range 1000000 * b.N {
 		key := fmt.Sprintf("key%d", rand.Int()%items)
-		m.Set(context.Background(), time.Now(), key, []byte(uuid.NewString()))
+		b := []byte(uuid.NewString())
+		m.Set(context.Background(), time.Now(), key, b)
+		temp += len(key) + len(b)
 	}
-
 	chunks.PrintCacheStats()
+
+	fmt.Println("Size:", float64(temp)/1024.0/1024.0)
 
 }

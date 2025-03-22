@@ -2,7 +2,6 @@ package chunks
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/hoyle1974/temporal/misc"
@@ -32,13 +31,6 @@ func LoadHeader(ctx context.Context, s storage.System, id ChunkId) (Header, erro
 }
 
 func (h Header) ResponsibleFor(timestamp time.Time) bool {
-	a := timestamp.UnixMilli()
-	b := h.Min.UnixMilli()
-	c := h.Max.UnixMilli()
-	if a == b {
-		fmt.Println(a, b, c)
-	}
-
 	if (timestamp.Equal(h.Min) || timestamp.After(h.Min)) && (timestamp.Equal(h.Min) || timestamp.Before(h.Max)) {
 		return true
 	}
@@ -84,6 +76,8 @@ func (h Header) LoadChunk(ctx context.Context, s storage.System) (Chunk, error) 
 		chunkCache.Set(string(h.Id), Chunk{}, cache.DefaultExpiration)
 		return Chunk{}, err
 	}
+
+	cd.populateNonSerializedData()
 
 	chunk := Chunk{Header: h, Data: cd}
 	chunkCache.Set(string(h.Id), chunk, cache.DefaultExpiration)
