@@ -85,6 +85,7 @@ func NewMapWithConfig(storage storage.System, maxSinkSize int64) (ReadWriteMap, 
 		eventSink: events.NewSink(storage, index, maxSinkSize),
 		data:      keys,
 		current:   time.Now(),
+		minTime:   index.GetMinTime(),
 	}, nil
 }
 
@@ -127,6 +128,9 @@ func (t *temporalMap) GetAll(ctx context.Context, timestamp time.Time) (map[stri
 func (t *temporalMap) Set(ctx context.Context, timestamp time.Time, key string, data []byte) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
+	if t.minTime.IsZero() {
+		t.minTime = timestamp
+	}
 	if t.current.IsZero() {
 		t.current = timestamp
 	}

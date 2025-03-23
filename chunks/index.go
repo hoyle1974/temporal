@@ -15,6 +15,7 @@ type Index interface {
 	UpdateIndex(header Header) error
 	findHeaderResponsibleFor(timestamp time.Time) (Header, error)
 	GetStateAt(timestamp time.Time) (map[string][]byte, error)
+	GetMinTime() time.Time
 }
 
 // The chunk index manages all the chunks
@@ -106,30 +107,9 @@ func (ci *index) UpdateIndex(header Header) error {
 	return nil
 }
 
-/*
-func (ci *index) findHeaderResponsibleFor(timestamp time.Time) (Header, error) {
-	ci.lock.Lock()
-	defer ci.lock.Unlock()
-
-	if len(ci.headers) == 0 {
-		return Header{}, nil
-	}
-	if timestamp.After(ci.headers[len(ci.headers)-1].Min) {
-		return ci.headers[len(ci.headers)-1], nil
-	}
-
-	for idx := range len(ci.headers) - 1 {
-		start := ci.headers[idx].Min
-		end := ci.headers[idx+1].Min
-
-		if (timestamp.After(start) || timestamp.Equal(start)) && timestamp.Before(end) {
-			return ci.headers[idx], nil
-		}
-	}
-
-	return Header{}, errors.New("no header found")
+func (ci *index) GetMinTime() time.Time {
+	return ci.minTime
 }
-*/
 
 func (ci *index) findHeaderResponsibleFor(timestamp time.Time) (Header, error) {
 	ci.lock.Lock()
