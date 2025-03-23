@@ -16,7 +16,7 @@ import (
 const layout = "20060102_150405.000000000"
 
 type Sink interface {
-	Append(event Event) error
+	Append(event Event) (bool, error)
 }
 
 type Index interface {
@@ -34,22 +34,22 @@ type sink struct {
 }
 
 // Append implements Sink.
-func (s *sink) Append(event Event) error {
+func (s *sink) Append(event Event) (bool, error) {
 	b, err := misc.EncodeToBytes(event)
 	if err != nil {
-		return err
+		return false, err
 	}
 	value := uint32(len(b))
 	err = binary.Write(s.writer, binary.BigEndian, value)
 	if err != nil {
-		return err
+		return false, err
 	}
 	bytesWritten, err := s.writer.Write(b)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if bytesWritten != len(b) {
-		return errors.New("could not write all data to the file")
+		return false, errors.New("could not write all data to the file")
 	}
 
 	s.totalBytesWritten += int64(bytesWritten)
@@ -58,11 +58,11 @@ func (s *sink) Append(event Event) error {
 		// Chunk this and start a new event stream
 		err = s.FlushSink(event.Timestamp)
 		if err != nil {
-			return err
+			return true, err
 		}
 	}
 
-	return nil
+	return false, nil
 }
 
 func NewSink(s storage.System, i Index, maxSinkSize int64) Sink {

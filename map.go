@@ -154,7 +154,7 @@ func (t *temporalMap) Set(ctx context.Context, timestamp time.Time, key string, 
 		return errors.New("del: timestamp is before current")
 	}
 
-	err := t.eventSink.Append(events.Event{
+	flushed, err := t.eventSink.Append(events.Event{
 		Timestamp: timestamp,
 		Key:       key,
 		Data:      data,
@@ -162,6 +162,9 @@ func (t *temporalMap) Set(ctx context.Context, timestamp time.Time, key string, 
 	})
 	if err != nil {
 		return err
+	}
+	if flushed {
+		t.eventMap = temporal.New()
 	}
 
 	t.data[key] = data
@@ -182,13 +185,16 @@ func (t *temporalMap) Del(ctx context.Context, timestamp time.Time, key string) 
 		return errors.New("del: timestamp is before current")
 	}
 
-	err := t.eventSink.Append(events.Event{
+	flushed, err := t.eventSink.Append(events.Event{
 		Timestamp: timestamp,
 		Key:       key,
 		Delete:    true,
 	})
 	if err != nil {
 		return err
+	}
+	if flushed {
+		t.eventMap = temporal.New()
 	}
 
 	delete(t.data, key)
