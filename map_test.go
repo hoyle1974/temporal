@@ -340,3 +340,42 @@ func Benchmark2(b *testing.B) {
 	fmt.Println("Size:", float64(temp)/1024.0/1024.0)
 
 }
+
+func TestMap6(t *testing.T) {
+	storage := storage.NewMemoryStorage()
+	m, err := NewMap(storage)
+	if err != nil {
+		t.Fatalf("could not create map: %v", err)
+	}
+	if m == nil {
+		t.Fatalf("map was nil")
+	}
+
+	a := time.Now()
+	err = m.Set(context.Background(), a, "foo", []byte("bar1"))
+	if err != nil {
+		t.Fatalf("map set failed: %v", err)
+	}
+
+	b := time.Now()
+	err = m.Set(context.Background(), b, "foo", []byte("bar2"))
+	if err != nil {
+		t.Fatalf("map set failed: %v", err)
+	}
+
+	temp, err := m.Get(context.Background(), a, "foo")
+	if err != nil {
+		t.Fatalf("map set failed: %v", err)
+	}
+	if string(temp) != "bar1" {
+		t.Fatalf("wrong value: %s", string(temp))
+	}
+
+	temp, err = m.Get(context.Background(), b, "foo")
+	if err != nil {
+		t.Fatalf("map set failed: %v", err)
+	}
+	if string(temp) != "bar2" {
+		t.Fatalf("wrong value: %s", string(temp))
+	}
+}
