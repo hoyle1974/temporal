@@ -56,6 +56,7 @@ type ChunkData struct {
 
 	keyToIndex map[string]int32
 	indexToKey map[int32]string
+	frames     [][]byte
 }
 
 func (cd *ChunkData) populateNonSerializedData() {
@@ -65,6 +66,7 @@ func (cd *ChunkData) populateNonSerializedData() {
 		cd.keyToIndex[k] = int32(idx)
 		cd.indexToKey[int32(idx)] = k
 	}
+	cd.frames = make([][]byte, len(cd.Diffs))
 }
 
 // This reprsents a chunk of data that would be stored on disk
@@ -204,12 +206,17 @@ func (c Chunk) GetStateAt(timestamp time.Time) (map[string][]byte, error) {
 		ret[c.Data.indexToKey[kv.KeyIndex]] = kv.Data
 	}
 
-	for _, diff := range c.Data.Diffs {
+	for idx, diff := range c.Data.Diffs {
 		if diff.Timestamp.After(timestamp) {
 			return ret, nil
 		}
-		n, _ := applyDiff(ret[c.Data.indexToKey[diff.KeyIndex]], diff.Diff)
-		ret[c.Data.indexToKey[diff.KeyIndex]] = n
+		if c.Data.frames[idx] == nil {
+			n, _ := applyDiff(ret[c.Data.indexToKey[diff.KeyIndex]], diff.Diff)
+			ret[c.Data.indexToKey[diff.KeyIndex]] = n
+			c.Data.frames[idx] = n
+		} else {
+			ret[c.Data.indexToKey[diff.KeyIndex]] = c.Data.frames[idx]
+		}
 	}
 
 	return ret, nil

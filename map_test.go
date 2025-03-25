@@ -379,3 +379,32 @@ func TestMap6(t *testing.T) {
 		t.Fatalf("wrong value: %s", string(temp))
 	}
 }
+
+func TestMap7(t *testing.T) {
+	s := storage.NewDiskStorage("/Users/jstrohm/code/khronoscope/data")
+	m, err := NewMap(s)
+	if err != nil {
+		t.Fatalf("could not create map: %v", err)
+	}
+	if m == nil {
+		t.Fatalf("map was nil")
+	}
+
+	min, max := m.GetMinMaxTime()
+
+	idx := 0
+	for max.After(min) {
+		if idx == 35 {
+			fmt.Println("-- 100 --")
+		}
+		a := time.Now()
+		state, err := m.GetAll(context.Background(), min)
+		if err != nil {
+			t.Fatalf("get all failed %s\n", err)
+		}
+		fmt.Println(idx, min, len(state), time.Since(a))
+
+		min = min.Add(time.Second)
+		idx++
+	}
+}
