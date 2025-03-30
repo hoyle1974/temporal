@@ -112,7 +112,7 @@ func (s *sink) FlushSink(timestamp time.Time) error {
 	}
 
 	estimatedSize, err := processOldSinks(s.store, s.index, s.maxSinkSize, keys)
-	if estimatedSize != 0 {
+	if errors.Is(err, ErrSinkTooSmall) {
 		s.estimator.OnFlush(estimatedSize, false)
 		return nil // We didn't process them because they were not large enough
 	}
@@ -140,6 +140,8 @@ func ProcessOldSinks(s storage.System, index Index) error {
 	_, err = processOldSinks(s, index, 0, keys)
 	return err
 }
+
+var ErrSinkTooSmall = errors.New("sink to small")
 
 func processOldSinks(s storage.System, index Index, minimumChunkSize int64, keys []string) (int64, error) {
 
@@ -175,6 +177,8 @@ func processOldSinks(s storage.System, index Index, minimumChunkSize int64, keys
 		}
 	}
 
+	var estimatedSize int64
+	var err error
 	if len(events) > 0 {
 
 		// Sort all the events
@@ -213,18 +217,19 @@ func processOldSinks(s storage.System, index Index, minimumChunkSize int64, keys
 		}
 		chunk.Finish(keyFrame, toFinish)
 
-		if estimatedSize, err := chunk.EstimateSize(); estimatedSize < minimumChunkSize || err != nil {
-			return estimatedSize, err
+		estimatedSize, err = chunk.EstimateSize()
+		if estimatedSize < int64(float64(minimumChunkSize)*0.9) || err != nil {
+			return estimatedSize, ErrSinkTooSmall
 		}
 
-		err := chunk.Save(context.Background(), s)
+		err = chunk.Save(context.Background(), s)
 		if err != nil {
-			return 0, err
+			return estimatedSize, err
 		}
 
 		err = index.UpdateIndex(chunk.Header)
 		if err != nil {
-			return 0, err
+			return estimatedSize, err
 		}
 	}
 
@@ -232,5 +237,5 @@ func processOldSinks(s storage.System, index Index, minimumChunkSize int64, keys
 		s.Delete(context.Background(), key)
 	}
 
-	return 0, nil
+	return estimatedSize, nil
 }
