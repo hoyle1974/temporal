@@ -24,13 +24,21 @@ type Index interface {
 	UpdateIndex(header chunks.Header) error
 }
 
+type Estimator interface {
+	OnWriteData(bytesWritten int64)
+	ShouldTryFlush() bool
+	OnFlush(compressedSize int64, success bool)
+}
+
 type sink struct {
 	key               string
 	store             storage.System
 	index             Index
 	totalBytesWritten int64
+	eventsWritten     int64
 	writer            storage.StreamWriter
 	maxSinkSize       int64
+	estimator         Estimator
 }
 
 // Append implements Sink.
@@ -51,10 +59,10 @@ func (s *sink) Append(event Event) (bool, error) {
 	if bytesWritten != len(b) {
 		return false, errors.New("could not write all data to the file")
 	}
-
+	s.estimator.OnWriteData(int64(bytesWritten))
 	s.totalBytesWritten += int64(bytesWritten)
 
-	if s.totalBytesWritten > s.maxSinkSize {
+	if s.estimator.ShouldTryFlush() {
 		// Chunk this and start a new event stream
 		err = s.FlushSink(event.Timestamp)
 		if err != nil {
@@ -73,25 +81,47 @@ func NewSink(s storage.System, i Index, maxSinkSize int64) Sink {
 
 	writer := s.BeginStream(context.Background(), key)
 
-	return &sink{key: key, writer: writer, store: s, index: i, maxSinkSize: maxSinkSize}
+	return &sink{
+		key:         key,
+		writer:      writer,
+		store:       s,
+		index:       i,
+		estimator:   misc.NewCompressionEstimator(maxSinkSize),
+		maxSinkSize: maxSinkSize,
+	}
 }
 
 func (s *sink) FlushSink(timestamp time.Time) error {
+	// We close the event stream, because we think we have the events
 	err := s.writer.Close()
 	if err != nil {
 		return err
 	}
+	// Make sure we start the stream again
+	defer func() {
+		formatted := timestamp.UTC().Add(time.Nanosecond).Format(layout)
+		key := "events/" + formatted + ".events"
+		s.writer = s.store.BeginStream(context.Background(), key)
+		s.key = key
+	}()
 
-	err = processOldSinks(s.store, s.index, []string{s.key})
+	// We may have more then 1 event file
+	keys, err := s.store.GetKeysWithPrefix(context.Background(), "events/")
 	if err != nil {
 		return err
 	}
 
-	formatted := timestamp.UTC().Add(time.Nanosecond).Format(layout)
-	key := "events/" + formatted + ".events"
-	s.writer = s.store.BeginStream(context.Background(), key)
+	estimatedSize, err := processOldSinks(s.store, s.index, s.maxSinkSize, keys)
+	if estimatedSize != 0 {
+		s.estimator.OnFlush(estimatedSize, false)
+		return nil // We didn't process them because they were not large enough
+	}
+	if err != nil {
+		return err
+	}
+	s.estimator.OnFlush(estimatedSize, true)
+
 	s.totalBytesWritten = 0
-	s.key = key
 
 	return nil
 }
@@ -107,17 +137,18 @@ func ProcessOldSinks(s storage.System, index Index) error {
 		return nil
 	}
 
-	return processOldSinks(s, index, keys)
+	_, err = processOldSinks(s, index, 0, keys)
+	return err
 }
 
-func processOldSinks(s storage.System, index Index, keys []string) error {
+func processOldSinks(s storage.System, index Index, minimumChunkSize int64, keys []string) (int64, error) {
 
+	// Read all the events so far
 	var events []Event
-
 	for _, key := range keys {
 		data, err := s.Read(context.Background(), key)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		reader := bytes.NewReader(data)
 
@@ -126,19 +157,19 @@ func processOldSinks(s storage.System, index Index, keys []string) error {
 
 			// Read the length (first 4 bytes)
 			if err := binary.Read(reader, binary.BigEndian, &length); err != nil {
-				return err
+				return 0, err
 			}
 
 			// Read the actual data of 'length' bytes
 			content := make([]byte, length)
 			if _, err := reader.Read(content); err != nil {
-				return err
+				return 0, err
 			}
 
 			var e Event
 			err := misc.DecodeFromBytes(content, &e)
 			if err != nil {
-				return err
+				return 0, err
 			}
 			events = append(events, e)
 		}
@@ -182,14 +213,18 @@ func processOldSinks(s storage.System, index Index, keys []string) error {
 		}
 		chunk.Finish(keyFrame, toFinish)
 
+		if estimatedSize, err := chunk.EstimateSize(); estimatedSize < minimumChunkSize || err != nil {
+			return estimatedSize, err
+		}
+
 		err := chunk.Save(context.Background(), s)
 		if err != nil {
-			return err
+			return 0, err
 		}
 
 		err = index.UpdateIndex(chunk.Header)
 		if err != nil {
-			return err
+			return 0, err
 		}
 	}
 
@@ -197,5 +232,5 @@ func processOldSinks(s storage.System, index Index, keys []string) error {
 		s.Delete(context.Background(), key)
 	}
 
-	return nil
+	return 0, nil
 }

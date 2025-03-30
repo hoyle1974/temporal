@@ -1,33 +1,42 @@
 package misc
 
-type EventSizeEstimator struct {
-	totalEvents int
-	totalSize   int64
-	alpha       float64
+import (
+	"sync"
+)
+
+type CompressionEstimator struct {
+	lock             sync.Mutex
+	flushThreshold   int64
+	currentSize      int64
+	compressionRatio float64
 }
 
-func NewEstimator(alpha float64) *EventSizeEstimator {
-	return &EventSizeEstimator{alpha: alpha}
-}
-
-// Update updates the estimator with a new observation, using exponential moving average for adaptability.
-func (e *EventSizeEstimator) Update(size int64, events int) {
-	if e.totalEvents == 0 || e.totalSize == 0 {
-		e.totalSize = size
-		e.totalEvents = events
-		return
+func NewCompressionEstimator(flushThreshold int64) *CompressionEstimator {
+	return &CompressionEstimator{
+		flushThreshold:   flushThreshold,
+		compressionRatio: 1.0,
 	}
-
-	// Apply exponential moving average for adaptive learning
-	e.totalSize = int64(e.alpha*float64(size) + (1-e.alpha)*float64(e.totalSize))
-	e.totalEvents = int(e.alpha*float64(events) + (1-e.alpha)*float64(e.totalEvents))
 }
 
-// Estimate calculates how many events are needed to reach the target size.
-func (e *EventSizeEstimator) Estimate(targetSize int64) int {
-	if e.totalEvents == 0 || e.totalSize == 0 {
-		return 0 // Not enough data to estimate
+func (e *CompressionEstimator) OnWriteData(bytesWritten int64) {
+	e.lock.Lock()
+	defer e.lock.Unlock()
+	e.currentSize += bytesWritten
+}
+
+func (e *CompressionEstimator) ShouldTryFlush() bool {
+	e.lock.Lock()
+	defer e.lock.Unlock()
+	return float64(e.currentSize)*e.compressionRatio >= float64(e.flushThreshold)
+}
+
+func (e *CompressionEstimator) OnFlush(compressedSize int64, success bool) {
+	e.lock.Lock()
+	defer e.lock.Unlock()
+
+	e.compressionRatio = float64(compressedSize) / float64(e.currentSize)
+
+	if success {
+		e.currentSize = 0
 	}
-	avgSizePerEvent := float64(e.totalSize) / float64(e.totalEvents)
-	return int(float64(targetSize) / avgSizePerEvent)
 }

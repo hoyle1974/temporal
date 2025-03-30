@@ -35,6 +35,18 @@ func TestMap1(t *testing.T) {
 	if string(temp) != "bar" {
 		t.Fatalf("wrong value: %s", string(temp))
 	}
+
+	err = m.Del(context.Background(), time.Now(), "foo")
+	if err != nil {
+		t.Fatalf("map set failed: %v", err)
+	}
+	temp, err = m.Get(context.Background(), time.Now(), "foo")
+	if err != nil {
+		t.Fatalf("map set failed: %v", err)
+	}
+	if string(temp) != "" {
+		t.Fatalf("wrong value: %s", string(temp))
+	}
 }
 
 func TestMap2(t *testing.T) {
@@ -393,18 +405,54 @@ func TestMap7(t *testing.T) {
 	min, max := m.GetMinMaxTime()
 
 	idx := 0
+	a := time.Now()
 	for max.After(min) {
-		if idx == 35 {
-			fmt.Println("-- 100 --")
-		}
-		a := time.Now()
-		state, err := m.GetAll(context.Background(), min)
+		_, err := m.GetAll(context.Background(), min)
 		if err != nil {
 			t.Fatalf("get all failed %s\n", err)
 		}
-		fmt.Println(idx, min, len(state), time.Since(a))
+		// fmt.Printf("%v ", time.Since(a))
+		// fmt.Println(idx, min, len(state), time.Since(a))
+		if time.Since(a) > time.Second*2 {
+			break
+		}
 
 		min = min.Add(time.Second)
 		idx++
 	}
+	fmt.Println("done")
+}
+
+func _TestMap8(t *testing.T) {
+
+	s := storage.NewMemoryStorage()
+	m, err := NewMapWithConfig(s, 1024*1024)
+	if err != nil {
+		t.Fatalf("could not create map: %v", err)
+	}
+	if m == nil {
+		t.Fatalf("map was nil")
+	}
+
+	temp := 0
+
+	start := time.Now()
+	items := 1000
+	for idx := range items {
+		key := fmt.Sprintf("key%d", idx)
+		b := []byte(uuid.NewString())
+		m.Set(context.Background(), start, key, b)
+		temp += len(key) + len(b)
+	}
+
+	for _ = range 1000000 {
+		key := fmt.Sprintf("key%d", rand.Int()%items)
+		b := []byte(uuid.NewString())
+		m.Set(context.Background(), time.Now(), key, b)
+		temp += len(key) + len(b)
+	}
+
+	tt := float64(temp) / 1024.0 / 1024.0
+	fmt.Println("Size:", tt)
+
 }

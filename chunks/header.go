@@ -2,6 +2,7 @@ package chunks
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/hoyle1974/temporal/misc"
@@ -70,6 +71,7 @@ func (h Header) LoadChunk(ctx context.Context, s storage.System) (Chunk, error) 
 		chunkCache.Set(string(h.Id), Chunk{}, cache.DefaultExpiration)
 		return Chunk{}, err
 	}
+	fmt.Printf("Load Chunk %d\n", len(b))
 
 	err = misc.DecodeFromBytes(b, &cd) // This might come to bite me in the future
 	if err != nil {

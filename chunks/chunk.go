@@ -187,6 +187,14 @@ func NewChunk(timestamp time.Time) *Chunk {
 	}
 }
 
+func (c Chunk) EstimateSize() (int64, error) {
+	b, err := misc.EncodeToBytes(c.Data)
+	if err != nil {
+		return 0, err
+	}
+	return int64(len(b)), nil
+}
+
 // Saves a header to the storage system
 func (c Chunk) Save(ctx context.Context, s storage.System) error {
 	c.Header.Save(ctx, s)
