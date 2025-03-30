@@ -144,14 +144,11 @@ func (t *temporalMap) GetAll(ctx context.Context, timestamp time.Time) (map[stri
 func (t *temporalMap) Set(ctx context.Context, timestamp time.Time, key string, data []byte) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	if t.minTime.IsZero() {
-		t.minTime = timestamp
-	}
 	if t.current.IsZero() {
 		t.current = timestamp
 	}
 	if timestamp.Before(t.current) {
-		return errors.New("del: timestamp is before current")
+		return errors.New("del: cannot delete data from the past")
 	}
 
 	flushed, err := t.eventSink.Append(events.Event{
