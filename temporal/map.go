@@ -5,6 +5,8 @@ import (
 	"encoding/gob"
 	"sync"
 	"time"
+
+	"github.com/hoyle1974/temporal/misc"
 )
 
 // TemporalMap acts like a map with the added ability to rewind and see a snapshot of the state of
@@ -29,6 +31,7 @@ type Map interface {
 
 // Map represents a map-like data structure with time-ordered items.
 type mapImpl struct {
+	_       misc.NoCopy
 	lock    sync.RWMutex
 	Items   map[string]*TimeValueStore
 	MinTime time.Time

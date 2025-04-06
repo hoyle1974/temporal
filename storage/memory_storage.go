@@ -5,9 +5,12 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/hoyle1974/temporal/misc"
 )
 
 type memoryStorage struct {
+	_    misc.NoCopy
 	lock sync.Mutex
 	data map[string][]byte
 }

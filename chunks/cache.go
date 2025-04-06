@@ -5,12 +5,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/hoyle1974/temporal/misc"
 	"github.com/patrickmn/go-cache"
 )
 
 var chunkCache = cache.New(time.Minute, time.Minute)
 
 type CacheStats struct {
+	_      misc.NoCopy
 	Hits   atomic.Int64
 	Misses atomic.Int64
 }

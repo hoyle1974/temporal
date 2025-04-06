@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hoyle1974/temporal/misc"
 	"github.com/hoyle1974/temporal/storage"
 )
 
@@ -16,19 +17,24 @@ type Index interface {
 	findHeaderResponsibleFor(timestamp time.Time) (Header, error)
 	GetStateAt(timestamp time.Time) (map[string][]byte, error)
 	GetMinTime() time.Time
+	GetMaxTime() time.Time
+	GetHeaders() []Header
 }
 
 // The chunk index manages all the chunks
 type index struct {
-	lock    sync.Mutex
-	storage storage.System
-	headers []Header
-	minTime time.Time
+	_           misc.NoCopy
+	lock        sync.Mutex
+	storage     storage.System
+	headers     []Header
+	minTime     time.Time
+	maxTime     time.Time
+	maxChunkAge time.Duration
 }
 
-func NewChunkIndex(storage storage.System) (Index, error) {
+func NewChunkIndex(storage storage.System, maxChunkAge time.Duration) (Index, error) {
 
-	ci := &index{storage: storage, headers: []Header{}}
+	ci := &index{storage: storage, headers: []Header{}, maxChunkAge: maxChunkAge}
 
 	// If start.idx doesn't exist, then we never started
 	startBin, err := storage.Read(context.Background(), "start.idx")
@@ -61,9 +67,15 @@ func NewChunkIndex(storage storage.System) (Index, error) {
 		}
 		ci.headers = append(ci.headers, h)
 		currChunkId = h.Next
+		ci.adjustMinMax(h.Min)
+		ci.adjustMinMax(h.Max)
 	}
 
 	return ci, nil
+}
+
+func (ci *index) GetHeaders() []Header {
+	return ci.headers
 }
 
 func (ci *index) UpdateIndex(header Header) error {
@@ -71,7 +83,8 @@ func (ci *index) UpdateIndex(header Header) error {
 	defer ci.lock.Unlock()
 
 	if ci.minTime.IsZero() {
-		ci.minTime = header.Min
+		ci.adjustMinMax(header.Min)
+		ci.adjustMinMax(header.Max)
 		err := ci.storage.Write(context.Background(), "start.idx", []byte(ci.minTime.UTC().Format(layout)))
 		if err != nil {
 			return err
@@ -85,9 +98,36 @@ func (ci *index) UpdateIndex(header Header) error {
 		return ci.headers[i].Min.Before(ci.headers[j].Min)
 	})
 
+	// Cleanup old headers & chunks
+	if ci.maxChunkAge != time.Duration(0) {
+		for _, header := range ci.headers {
+			ci.adjustMinMax(header.Min)
+			ci.adjustMinMax(header.Max)
+		}
+		minValidTime := ci.maxTime.Add(-ci.maxChunkAge)
+		startIdx := 0
+		for idx := range ci.headers {
+			if ci.headers[idx].Max.Before(minValidTime) {
+				ci.headers[idx].RemoveFromStorage(context.Background(), ci.storage)
+				startIdx = idx + 1
+				break
+			}
+		}
+		if startIdx != 0 {
+			ci.headers = ci.headers[startIdx+1:]
+		}
+	}
+
+	// Reset and recalculate
+	ci.minTime = time.Time{}
+	ci.maxTime = time.Time{}
+
 	// Stich them together if needed
 	modified := map[int]any{}
 	for idx, _ := range ci.headers {
+		ci.adjustMinMax(ci.headers[idx].Min)
+		ci.adjustMinMax(ci.headers[idx].Max)
+
 		if ci.headers[idx].Next == "" && idx+1 < len(ci.headers) {
 			ci.headers[idx].Next = ci.headers[idx+1].Id
 			modified[idx] = true
@@ -96,8 +136,12 @@ func (ci *index) UpdateIndex(header Header) error {
 			ci.headers[idx].Prev = ci.headers[idx-1].Id
 			modified[idx] = true
 		}
+		if idx == 0 && ci.headers[idx].Prev != "" { // Make sure our first one isn't pointing back
+			ci.headers[idx].Prev = ""
+			modified[idx] = true
+		}
 	}
-	for idx, _ := range modified {
+	for idx := range modified {
 		err := ci.headers[idx].Save(context.Background(), ci.storage)
 		if err != nil {
 			return err
@@ -109,6 +153,25 @@ func (ci *index) UpdateIndex(header Header) error {
 
 func (ci *index) GetMinTime() time.Time {
 	return ci.minTime
+}
+
+func (ci *index) GetMaxTime() time.Time {
+	return ci.maxTime
+}
+
+func (ci *index) adjustMinMax(a time.Time) {
+	if ci.minTime.IsZero() {
+		ci.minTime = a
+	}
+	if ci.maxTime.IsZero() {
+		ci.maxTime = a
+	}
+	if a.Before(ci.minTime) {
+		ci.minTime = a
+	}
+	if ci.maxTime.Before(a) {
+		ci.maxTime = a
+	}
 }
 
 func (ci *index) findHeaderResponsibleFor(timestamp time.Time) (Header, error) {

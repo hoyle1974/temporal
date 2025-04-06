@@ -322,7 +322,7 @@ func Benchmark2(b *testing.B) {
 	os.MkdirAll("data", os.ModeDir|0755)
 	s := storage.NewDiskStorage("data")
 
-	m, err := NewMapWithConfig(s, 4*8*1024*1024)
+	m, err := NewMapWithConfig(s, MapConfig{MaxChunkTargetSize: 4 * 8 * 1024 * 1024})
 	if err != nil {
 		b.Fatalf("could not create map: %v", err)
 	}
@@ -426,7 +426,7 @@ func TestMap7(t *testing.T) {
 func _TestMap8(t *testing.T) {
 
 	s := storage.NewMemoryStorage()
-	m, err := NewMapWithConfig(s, 1024*1024)
+	m, err := NewMapWithConfig(s, MapConfig{MaxChunkTargetSize: 1024 * 1024})
 	if err != nil {
 		t.Fatalf("could not create map: %v", err)
 	}
@@ -454,5 +454,44 @@ func _TestMap8(t *testing.T) {
 
 	tt := float64(temp) / 1024.0 / 1024.0
 	fmt.Println("Size:", tt)
+
+}
+
+func TestMapExpiration(t *testing.T) {
+
+	s := storage.NewMemoryStorage()
+	m, err := NewMapWithConfig(s, MapConfig{MaxChunkTargetSize: 100, MaxChunkAge: time.Second})
+	if err != nil {
+		t.Fatalf("could not create map: %v", err)
+	}
+	if m == nil {
+		t.Fatalf("map was nil")
+	}
+
+	start := time.Now()
+
+	idx := 0
+	for t := 0; t < 2000; t++ {
+		m.Set(context.Background(), start.Add(time.Millisecond*time.Duration(idx)), "foo", []byte(fmt.Sprintf("bar:%d", t)))
+		idx++
+	}
+	keys, err := s.GetKeysWithPrefix(context.Background(), "")
+	if err != nil {
+		t.Fatalf("could not get map: %v", err)
+	}
+	count1 := len(keys)
+
+	for t := 0; t < 2000; t++ {
+		m.Set(context.Background(), start.Add(time.Millisecond*time.Duration(idx)), "foo", []byte(fmt.Sprintf("bar:%d", t)))
+		idx++
+	}
+	keys, err = s.GetKeysWithPrefix(context.Background(), "")
+	if err != nil {
+		t.Fatalf("could not get map: %v", err)
+	}
+	count2 := len(keys)
+
+	fmt.Println(count1)
+	fmt.Println(count2)
 
 }

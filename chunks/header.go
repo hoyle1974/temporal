@@ -2,7 +2,6 @@ package chunks
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/hoyle1974/temporal/misc"
@@ -38,6 +37,14 @@ func (h Header) ResponsibleFor(timestamp time.Time) bool {
 	return false
 }
 
+func (h Header) RemoveFromStorage(ctx context.Context, s storage.System) error {
+	err := s.Delete(ctx, h.Id.HeaderKey())
+	if err != nil {
+		return err
+	}
+	return s.Delete(ctx, h.Id.ChunkKey())
+}
+
 // Saves a header to the storage system
 func (h Header) Save(ctx context.Context, s storage.System) error {
 	if h.LastUpdate.IsZero() {
@@ -71,7 +78,7 @@ func (h Header) LoadChunk(ctx context.Context, s storage.System) (Chunk, error) 
 		chunkCache.Set(string(h.Id), Chunk{}, cache.DefaultExpiration)
 		return Chunk{}, err
 	}
-	fmt.Printf("Load Chunk %d\n", len(b))
+	cd.diskSize = len(b)
 
 	err = misc.DecodeFromBytes(b, &cd) // This might come to bite me in the future
 	if err != nil {

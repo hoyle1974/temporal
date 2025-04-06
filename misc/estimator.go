@@ -5,6 +5,7 @@ import (
 )
 
 type CompressionEstimator struct {
+	_                NoCopy
 	lock             sync.Mutex
 	flushThreshold   int64
 	currentSize      int64

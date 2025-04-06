@@ -9,27 +9,6 @@ import (
 	"time"
 )
 
-/*
-func EncodeToBytes(obj any) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	if err := enc.Encode(obj); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-func DecodeToStruct(data []byte) (*collated, error) {
-	var result collated
-	buf := bytes.NewReader(data)
-	dec := gob.NewDecoder(buf)
-	if err := dec.Decode(&result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-*/
-
 // EncodeToBytes compresses and serializes the data
 func EncodeToBytes(data interface{}) ([]byte, error) {
 	var buf bytes.Buffer
@@ -137,3 +116,8 @@ func RandomTimeBetween(start, end time.Time) (time.Time, error) {
 
 	return randomTime, nil
 }
+
+type NoCopy struct{}
+
+func (*NoCopy) Lock()   {}
+func (*NoCopy) Unlock() {}

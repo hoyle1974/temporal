@@ -57,6 +57,29 @@ type ChunkData struct {
 	keyToIndex map[string]int32
 	indexToKey map[int32]string
 	frames     [][]byte
+	diskSize   int
+}
+
+func (c ChunkData) GetDiskSize() int {
+	return c.diskSize
+}
+
+func (c ChunkData) RawSize() int {
+	bytes := 0
+	for _, k := range c.Keys {
+		bytes += len(k)
+	}
+	for _, kv := range c.IndexedKeyFrame {
+		bytes += 4
+		bytes += len(kv.Data)
+	}
+	for _, d := range c.Diffs {
+		bytes += 8 * 3
+		bytes += 4
+		bytes += len(d.Diff)
+	}
+
+	return bytes
 }
 
 func (cd *ChunkData) populateNonSerializedData() {

@@ -35,10 +35,11 @@ type sink struct {
 	store             storage.System
 	index             Index
 	totalBytesWritten int64
-	eventsWritten     int64
 	writer            storage.StreamWriter
-	maxSinkSize       int64
+	chunkTargetSize   int64
+	maxChunkAge       time.Duration
 	estimator         Estimator
+	meta              Meta
 }
 
 // Append implements Sink.
@@ -73,21 +74,30 @@ func (s *sink) Append(event Event) (bool, error) {
 	return false, nil
 }
 
-func NewSink(s storage.System, i Index, maxSinkSize int64) Sink {
-	t := time.Now().UTC()
+func eventKey(t time.Time) string {
+	formatted := t.UTC().Format(layout)
+	return "events/" + formatted + ".events"
+}
 
-	formatted := t.Format(layout)
-	key := "events/" + formatted + ".events"
+func NewSink(s storage.System, i Index, chunkTargetSize int64, maxChunkAge time.Duration) Sink {
+	key := eventKey(time.Now().UTC())
 
 	writer := s.BeginStream(context.Background(), key)
 
+	meta, err := NewMeta(s)
+	if err != nil {
+		return nil
+	}
+
 	return &sink{
-		key:         key,
-		writer:      writer,
-		store:       s,
-		index:       i,
-		estimator:   misc.NewCompressionEstimator(maxSinkSize),
-		maxSinkSize: maxSinkSize,
+		key:             key,
+		writer:          writer,
+		store:           s,
+		index:           i,
+		estimator:       misc.NewCompressionEstimator(chunkTargetSize),
+		chunkTargetSize: chunkTargetSize,
+		maxChunkAge:     maxChunkAge,
+		meta:            meta,
 	}
 }
 
@@ -99,19 +109,18 @@ func (s *sink) FlushSink(timestamp time.Time) error {
 	}
 	// Make sure we start the stream again
 	defer func() {
-		formatted := timestamp.UTC().Add(time.Nanosecond).Format(layout)
-		key := "events/" + formatted + ".events"
+		key := eventKey(timestamp.UTC().Add(time.Nanosecond))
 		s.writer = s.store.BeginStream(context.Background(), key)
 		s.key = key
 	}()
 
 	// We may have more then 1 event file
-	keys, err := s.store.GetKeysWithPrefix(context.Background(), "events/")
+	keys, err := s.meta.GetEventFiles()
 	if err != nil {
 		return err
 	}
 
-	estimatedSize, err := processOldSinks(s.store, s.index, s.maxSinkSize, keys)
+	estimatedSize, err := processOldSinks(s.store, s.index, s.chunkTargetSize, keys)
 	if errors.Is(err, ErrSinkTooSmall) {
 		s.estimator.OnFlush(estimatedSize, false)
 		return nil // We didn't process them because they were not large enough
@@ -143,38 +152,52 @@ func ProcessOldSinks(s storage.System, index Index) error {
 
 var ErrSinkTooSmall = errors.New("sink to small")
 
+func GetEvents(s storage.System, eventFile string) ([]Event, error) {
+
+	// Read all the events so far
+	var events []Event
+
+	data, err := s.Read(context.Background(), eventFile)
+	if err != nil {
+		return events, err
+	}
+	reader := bytes.NewReader(data)
+
+	for reader.Len() > 0 {
+		var length uint32
+
+		// Read the length (first 4 bytes)
+		if err := binary.Read(reader, binary.BigEndian, &length); err != nil {
+			return events, err
+		}
+
+		// Read the actual data of 'length' bytes
+		content := make([]byte, length)
+		if _, err := reader.Read(content); err != nil {
+			return events, err
+		}
+
+		var e Event
+		err := misc.DecodeFromBytes(content, &e)
+		if err != nil {
+			return events, err
+		}
+		events = append(events, e)
+	}
+
+	return events, nil
+}
+
 func processOldSinks(s storage.System, index Index, minimumChunkSize int64, keys []string) (int64, error) {
 
 	// Read all the events so far
 	var events []Event
 	for _, key := range keys {
-		data, err := s.Read(context.Background(), key)
+		e, err := GetEvents(s, key)
 		if err != nil {
 			return 0, err
 		}
-		reader := bytes.NewReader(data)
-
-		for reader.Len() > 0 {
-			var length uint32
-
-			// Read the length (first 4 bytes)
-			if err := binary.Read(reader, binary.BigEndian, &length); err != nil {
-				return 0, err
-			}
-
-			// Read the actual data of 'length' bytes
-			content := make([]byte, length)
-			if _, err := reader.Read(content); err != nil {
-				return 0, err
-			}
-
-			var e Event
-			err := misc.DecodeFromBytes(content, &e)
-			if err != nil {
-				return 0, err
-			}
-			events = append(events, e)
-		}
+		events = append(events, e...)
 	}
 
 	var estimatedSize int64

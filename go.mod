@@ -22,4 +22,5 @@ require (
 	github.com/gabstv/go-bsdiff v1.0.5
 	github.com/google/uuid v1.6.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
+	github.com/spf13/pflag v1.0.6
 )
