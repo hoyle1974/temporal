@@ -10,6 +10,7 @@ import (
 
 	"github.com/hoyle1974/temporal/misc"
 	"github.com/hoyle1974/temporal/storage"
+	"github.com/hoyle1974/temporal/telemetry"
 )
 
 type Index interface {
@@ -30,11 +31,19 @@ type index struct {
 	minTime     time.Time
 	maxTime     time.Time
 	maxChunkAge time.Duration
+	metrics     telemetry.Metrics
+	logger      telemetry.Logger
 }
 
-func NewChunkIndex(storage storage.System, maxChunkAge time.Duration) (Index, error) {
-
-	ci := &index{storage: storage, headers: []Header{}, maxChunkAge: maxChunkAge}
+func NewChunkIndex(storage storage.System, maxChunkAge time.Duration, logger telemetry.Logger, metrics telemetry.Metrics) (Index, error) {
+	logger.Info("NewChunkIndex")
+	ci := &index{
+		storage:     storage,
+		headers:     []Header{},
+		maxChunkAge: maxChunkAge,
+		metrics:     metrics,
+		logger:      logger,
+	}
 
 	// If start.idx doesn't exist, then we never started
 	startBin, err := storage.Read(context.Background(), "start.idx")

@@ -11,6 +11,7 @@ import (
 	"github.com/hoyle1974/temporal/chunks"
 	"github.com/hoyle1974/temporal/misc"
 	"github.com/hoyle1974/temporal/storage"
+	"github.com/hoyle1974/temporal/telemetry"
 )
 
 const layout = "20060102_150405.000000000"
@@ -40,6 +41,8 @@ type sink struct {
 	maxChunkAge       time.Duration
 	estimator         Estimator
 	meta              Meta
+	logger            telemetry.Logger
+	metrics           telemetry.Metrics
 }
 
 // Append implements Sink.
@@ -79,7 +82,7 @@ func eventKey(t time.Time) string {
 	return "events/" + formatted + ".events"
 }
 
-func NewSink(s storage.System, i Index, chunkTargetSize int64, maxChunkAge time.Duration) Sink {
+func NewSink(s storage.System, i Index, chunkTargetSize int64, maxChunkAge time.Duration, logger telemetry.Logger, metrics telemetry.Metrics) Sink {
 	key := eventKey(time.Now().UTC())
 
 	writer := s.BeginStream(context.Background(), key)
@@ -98,6 +101,8 @@ func NewSink(s storage.System, i Index, chunkTargetSize int64, maxChunkAge time.
 		chunkTargetSize: chunkTargetSize,
 		maxChunkAge:     maxChunkAge,
 		meta:            meta,
+		logger:          logger,
+		metrics:         metrics,
 	}
 }
 

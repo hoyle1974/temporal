@@ -10,6 +10,7 @@ import (
 	"github.com/hoyle1974/temporal/events"
 	"github.com/hoyle1974/temporal/misc"
 	"github.com/hoyle1974/temporal/storage"
+	"github.com/hoyle1974/temporal/telemetry"
 	"github.com/hoyle1974/temporal/temporal"
 )
 
@@ -58,6 +59,8 @@ type temporalMap struct {
 type MapConfig struct {
 	MaxChunkTargetSize int64
 	MaxChunkAge        time.Duration
+	Metrics            telemetry.Metrics
+	Logger             telemetry.Logger
 }
 
 func NewMap(storage storage.System) (ReadWriteMap, error) {
@@ -65,8 +68,15 @@ func NewMap(storage storage.System) (ReadWriteMap, error) {
 }
 
 func NewMapWithConfig(storage storage.System, config MapConfig) (ReadWriteMap, error) {
+	if config.Logger == nil {
+		config.Logger = telemetry.NOPLogger{}
+	}
+	if config.Metrics == nil {
+		config.Metrics = telemetry.NOPMetrics{}
+	}
+
 	// Build/Load indexes
-	index, err := chunks.NewChunkIndex(storage, config.MaxChunkAge)
+	index, err := chunks.NewChunkIndex(storage, config.MaxChunkAge, config.Logger, config.Metrics)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +95,7 @@ func NewMapWithConfig(storage storage.System, config MapConfig) (ReadWriteMap, e
 	return &temporalMap{
 		storage:   storage,
 		index:     index,
-		eventSink: events.NewSink(storage, index, config.MaxChunkTargetSize, config.MaxChunkAge),
+		eventSink: events.NewSink(storage, index, config.MaxChunkTargetSize, config.MaxChunkAge, config.Logger, config.Metrics),
 		data:      keys,
 		current:   time.Now(),
 		minTime:   index.GetMinTime(),

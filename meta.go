@@ -9,6 +9,7 @@ import (
 	"github.com/hoyle1974/temporal/chunks"
 	"github.com/hoyle1974/temporal/events"
 	"github.com/hoyle1974/temporal/storage"
+	"github.com/hoyle1974/temporal/telemetry"
 )
 
 type temporalMeta struct {
@@ -26,7 +27,7 @@ func NewMeta(storage storage.System) (Meta, error) {
 	}
 
 	// Build/Load indexes
-	index, err := chunks.NewChunkIndex(storage, time.Duration(0))
+	index, err := chunks.NewChunkIndex(storage, time.Duration(0), telemetry.NOPLogger{}, telemetry.NOPMetrics{})
 	if err != nil {
 		return nil, err
 	}
