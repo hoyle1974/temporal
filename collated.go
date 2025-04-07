@@ -1,15 +1,6 @@
 package temporal
 
-import (
-	"encoding/gob"
-	"fmt"
-	"time"
-	"weak"
-
-	"github.com/alitto/pond/v2"
-	"github.com/hoyle1974/temporal/misc"
-)
-
+/*
 func init() {
 	gob.Register(diffFrame2{})
 }
@@ -141,3 +132,5 @@ func collateData(pool pond.Pool, dataToCollate []Keyframe, c *collated) *collate
 
 	return c
 }
+
+*/

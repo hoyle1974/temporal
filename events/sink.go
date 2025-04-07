@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
+	"fmt"
 	"sort"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/hoyle1974/temporal/chunks"
 	"github.com/hoyle1974/temporal/misc"
@@ -49,16 +51,16 @@ type sink struct {
 func (s *sink) Append(event Event) (bool, error) {
 	b, err := misc.EncodeToBytes(event)
 	if err != nil {
-		return false, err
+		return false, errors.Wrap(err, "can not encode event")
 	}
 	value := uint32(len(b))
 	err = binary.Write(s.writer, binary.BigEndian, value)
 	if err != nil {
-		return false, err
+		return false, errors.Wrap(err, "can not write event length")
 	}
 	bytesWritten, err := s.writer.Write(b)
 	if err != nil {
-		return false, err
+		return false, errors.Wrap(err, "can not write event")
 	}
 	if bytesWritten != len(b) {
 		return false, errors.New("could not write all data to the file")
@@ -70,7 +72,7 @@ func (s *sink) Append(event Event) (bool, error) {
 		// Chunk this and start a new event stream
 		err = s.FlushSink(event.Timestamp)
 		if err != nil {
-			return true, err
+			return true, errors.Wrap(err, "can not flush sink")
 		}
 	}
 
@@ -85,6 +87,7 @@ func eventKey(t time.Time) string {
 func NewSink(s storage.System, i Index, chunkTargetSize int64, maxChunkAge time.Duration, logger telemetry.Logger, metrics telemetry.Metrics) Sink {
 	key := eventKey(time.Now().UTC())
 
+	logger.Debug(fmt.Sprintf("Begin stream %s", key))
 	writer := s.BeginStream(context.Background(), key)
 
 	meta, err := NewMeta(s)
@@ -107,14 +110,17 @@ func NewSink(s storage.System, i Index, chunkTargetSize int64, maxChunkAge time.
 }
 
 func (s *sink) FlushSink(timestamp time.Time) error {
+	s.logger.Debug(fmt.Sprintf("FlushSink %v", timestamp))
 	// We close the event stream, because we think we have the events
 	err := s.writer.Close()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "can not close event stream")
 	}
 	// Make sure we start the stream again
 	defer func() {
 		key := eventKey(timestamp.UTC().Add(time.Nanosecond))
+
+		s.logger.Debug(fmt.Sprintf("Beginning a new stream %v", key))
 		s.writer = s.store.BeginStream(context.Background(), key)
 		s.key = key
 	}()
@@ -122,16 +128,16 @@ func (s *sink) FlushSink(timestamp time.Time) error {
 	// We may have more then 1 event file
 	keys, err := s.meta.GetEventFiles()
 	if err != nil {
-		return err
+		return errors.Wrap(err, "can not get event files")
 	}
 
-	estimatedSize, err := processOldSinks(s.store, s.index, s.chunkTargetSize, keys)
+	estimatedSize, err := processOldSinks(s.logger, s.store, s.index, s.chunkTargetSize, keys)
 	if errors.Is(err, ErrSinkTooSmall) {
 		s.estimator.OnFlush(estimatedSize, false)
 		return nil // We didn't process them because they were not large enough
 	}
 	if err != nil {
-		return err
+		return errors.Wrap(err, "can not process old sinks")
 	}
 	s.estimator.OnFlush(estimatedSize, true)
 
@@ -140,19 +146,19 @@ func (s *sink) FlushSink(timestamp time.Time) error {
 	return nil
 }
 
-func ProcessOldSinks(s storage.System, index Index) error {
+func ProcessOldSinks(logger telemetry.Logger, s storage.System, index Index) error {
 	// Read any old log sinks, clean them up and store
 	// them as chunks
 	keys, err := s.GetKeysWithPrefix(context.Background(), "events/")
 	if err != nil {
-		return err
+		return errors.Wrap(err, "can not get keys with prefix")
 	}
 	if len(keys) == 0 {
 		return nil
 	}
 
-	_, err = processOldSinks(s, index, 0, keys)
-	return err
+	_, err = processOldSinks(logger, s, index, 0, keys)
+	return errors.Wrap(err, "can not process old sinks")
 }
 
 var ErrSinkTooSmall = errors.New("sink to small")
@@ -164,7 +170,7 @@ func GetEvents(s storage.System, eventFile string) ([]Event, error) {
 
 	data, err := s.Read(context.Background(), eventFile)
 	if err != nil {
-		return events, err
+		return events, errors.Wrap(err, "can not read event file")
 	}
 	reader := bytes.NewReader(data)
 
@@ -173,19 +179,19 @@ func GetEvents(s storage.System, eventFile string) ([]Event, error) {
 
 		// Read the length (first 4 bytes)
 		if err := binary.Read(reader, binary.BigEndian, &length); err != nil {
-			return events, err
+			return events, errors.Wrap(err, "can not read event length")
 		}
 
 		// Read the actual data of 'length' bytes
 		content := make([]byte, length)
 		if _, err := reader.Read(content); err != nil {
-			return events, err
+			return events, errors.Wrap(err, "can not read event content")
 		}
 
 		var e Event
 		err := misc.DecodeFromBytes(content, &e)
 		if err != nil {
-			return events, err
+			return events, errors.Wrap(err, "can not decode event")
 		}
 		events = append(events, e)
 	}
@@ -193,20 +199,23 @@ func GetEvents(s storage.System, eventFile string) ([]Event, error) {
 	return events, nil
 }
 
-func processOldSinks(s storage.System, index Index, minimumChunkSize int64, keys []string) (int64, error) {
+func processOldSinks(logger telemetry.Logger, s storage.System, index Index, minimumChunkSize int64, keys []string) (int64, error) {
+	logger.Debug("ProcessoldSinks")
 
 	// Read all the events so far
 	var events []Event
 	for _, key := range keys {
 		e, err := GetEvents(s, key)
 		if err != nil {
-			return 0, err
+			return 0, errors.Wrap(err, "can not get events")
 		}
 		events = append(events, e...)
 	}
 
 	var estimatedSize int64
 	var err error
+	logger.Debug(fmt.Sprintf("Event Count: %v", len(events)))
+
 	if len(events) > 0 {
 
 		// Sort all the events
@@ -247,17 +256,20 @@ func processOldSinks(s storage.System, index Index, minimumChunkSize int64, keys
 
 		estimatedSize, err = chunk.EstimateSize()
 		if estimatedSize < int64(float64(minimumChunkSize)*0.9) || err != nil {
+			logger.Debug(fmt.Sprintf("Not enough data to chunk %v < %v", estimatedSize, int64(float64(minimumChunkSize)*0.9)))
+
 			return estimatedSize, ErrSinkTooSmall
 		}
+		logger.Debug(fmt.Sprintf("Enough data to chunk %v >= %v", estimatedSize, int64(float64(minimumChunkSize)*0.9)))
 
 		err = chunk.Save(context.Background(), s)
 		if err != nil {
-			return estimatedSize, err
+			return estimatedSize, errors.Wrap(err, "can not save chunk")
 		}
 
 		err = index.UpdateIndex(chunk.Header)
 		if err != nil {
-			return estimatedSize, err
+			return estimatedSize, errors.Wrap(err, "can not update index")
 		}
 	}
 

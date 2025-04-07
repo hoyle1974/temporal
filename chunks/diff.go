@@ -1,10 +1,9 @@
 package chunks
 
 import (
-	"fmt"
-
 	"github.com/gabstv/go-bsdiff/pkg/bsdiff"
 	"github.com/gabstv/go-bsdiff/pkg/bspatch"
+	"github.com/pkg/errors"
 )
 
 type Diff []byte
@@ -12,7 +11,7 @@ type Diff []byte
 func generateDiff(a, b []byte) (Diff, error) {
 	patch, err := bsdiff.Bytes(a, b)
 	if err != nil {
-		return Diff{}, err
+		return Diff{}, errors.Wrap(err, "can not generate diff")
 	}
 
 	if len(patch) >= len(b) {
@@ -38,10 +37,10 @@ func applyDiff(a []byte, diffData Diff) ([]byte, error) {
 		// Diff case
 		newfile, err := bspatch.Bytes(a, diffData[1:])
 		if err != nil {
-			return []byte{}, err
+			return []byte{}, errors.Wrap(err, "can not apply diff")
 		}
 		return newfile, nil
 	default:
-		return []byte{}, fmt.Errorf("invalid diff format")
+		return []byte{}, errors.Errorf("invalid diff format")
 	}
 }

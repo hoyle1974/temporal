@@ -2,11 +2,12 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/pkg/errors"
 )
 
 type diskStorage struct {
@@ -26,7 +27,7 @@ func (ds *diskStorage) GetKeysWithPrefix(ctx context.Context, prefix string) ([]
 	// Walk through all files and directories
 	err := filepath.WalkDir(ds.BaseDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return err
+			return errors.Wrap(err, "can not walk directory")
 		}
 
 		// Check if it's a file and starts with the prefix
@@ -69,13 +70,13 @@ func (ds *diskStorage) BeginStream(ctx context.Context, key string) StreamWriter
 func (ds *diskStorage) Write(ctx context.Context, key string, data []byte) error {
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return errors.Wrap(ctx.Err(), "context canceled")
 	default:
 	}
 
 	filePath := filepath.Join(ds.BaseDir, key)
 	if err := os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
-		return err
+		return errors.Wrap(err, "can not create directory")
 	}
 
 	return os.WriteFile(filePath, data, 0644)
@@ -85,7 +86,7 @@ func (ds *diskStorage) Write(ctx context.Context, key string, data []byte) error
 func (ds *diskStorage) Read(ctx context.Context, key string) ([]byte, error) {
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, errors.Wrap(ctx.Err(), "context canceled")
 	default:
 	}
 
@@ -97,7 +98,7 @@ func (ds *diskStorage) Read(ctx context.Context, key string) ([]byte, error) {
 func (ds *diskStorage) Delete(ctx context.Context, key string) error {
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return errors.Wrap(ctx.Err(), "context canceled")
 	default:
 	}
 
@@ -106,7 +107,7 @@ func (ds *diskStorage) Delete(ctx context.Context, key string) error {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil // Ignore file not found errors
 		}
-		return err
+		return errors.Wrap(err, "can not delete file")
 	}
 	return nil
 }

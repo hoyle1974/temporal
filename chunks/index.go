@@ -2,11 +2,12 @@ package chunks
 
 import (
 	"context"
-	"errors"
 	"os"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/hoyle1974/temporal/misc"
 	"github.com/hoyle1974/temporal/storage"
@@ -51,14 +52,14 @@ func NewChunkIndex(storage storage.System, maxChunkAge time.Duration, logger tel
 		return ci, nil
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return ci, err
+		return ci, errors.Wrap(err, "can not read start.idx")
 	}
 	if startBin != nil || len(startBin) > 0 {
 		startTimeKey := string(startBin)
 
 		t, err := time.Parse(layout, startTimeKey)
 		if err != nil {
-			return ci, err
+			return ci, errors.Wrap(err, "can not parse start.idx")
 		}
 		t = t.UTC()
 
@@ -72,7 +73,7 @@ func NewChunkIndex(storage storage.System, maxChunkAge time.Duration, logger tel
 	for currChunkId != "" {
 		h, err := LoadHeader(context.Background(), storage, currChunkId)
 		if err != nil {
-			return ci, err
+			return ci, errors.Wrap(err, "can not load header")
 		}
 		ci.headers = append(ci.headers, h)
 		currChunkId = h.Next
@@ -96,7 +97,7 @@ func (ci *index) UpdateIndex(header Header) error {
 		ci.adjustMinMax(header.Max)
 		err := ci.storage.Write(context.Background(), "start.idx", []byte(ci.minTime.UTC().Format(layout)))
 		if err != nil {
-			return err
+			return errors.Wrap(err, "can not write start.idx")
 		}
 	}
 
@@ -153,7 +154,7 @@ func (ci *index) UpdateIndex(header Header) error {
 	for idx := range modified {
 		err := ci.headers[idx].Save(context.Background(), ci.storage)
 		if err != nil {
-			return err
+			return errors.Wrap(err, "can not save header")
 		}
 	}
 
@@ -243,12 +244,12 @@ func (ci *index) GetStateAt(timestamp time.Time) (map[string][]byte, error) {
 	// Find the chunk that would have time.Time in it
 	header, err := ci.findHeaderResponsibleFor(timestamp)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "can not find header")
 	}
 
 	chunk, err := header.LoadChunk(context.Background(), ci.storage)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "can not load chunk")
 	}
 
 	return chunk.GetStateAt(timestamp)

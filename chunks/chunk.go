@@ -2,12 +2,12 @@ package chunks
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"time"
 
 	"github.com/hoyle1974/temporal/misc"
 	"github.com/hoyle1974/temporal/storage"
+	"github.com/pkg/errors"
 )
 
 type KVPair struct {
@@ -144,8 +144,7 @@ func (c *Chunk) Finish(keyFrame KeyFrame, events []Event) {
 				} else {
 					diff, err := generateDiff(value, e.Data)
 					if err != nil {
-						fmt.Println(err)
-						panic(err)
+						panic(errors.Wrap(err, "can not generate a diff, no solution for this problem"))
 					}
 					diffs = append(diffs, DiffEvent{Timestamp: e.Timestamp, KeyIndex: keyMap[e.Key], Diff: diff})
 					value = e.Data
@@ -213,7 +212,7 @@ func NewChunk(timestamp time.Time) *Chunk {
 func (c Chunk) EstimateSize() (int64, error) {
 	b, err := misc.EncodeToBytes(c.Data)
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "can not encode chunk to bytes to estimate size")
 	}
 	return int64(len(b)), nil
 }
@@ -226,7 +225,7 @@ func (c Chunk) Save(ctx context.Context, s storage.System) error {
 
 	b, err := misc.EncodeToBytes(c.Data)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "can not encode chunk to bytes to save")
 	}
 	return s.Write(ctx, c.Data.Id.ChunkKey(), b)
 }

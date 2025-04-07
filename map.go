@@ -2,9 +2,10 @@ package temporal
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/hoyle1974/temporal/chunks"
 	"github.com/hoyle1974/temporal/events"
@@ -78,18 +79,18 @@ func NewMapWithConfig(storage storage.System, config MapConfig) (ReadWriteMap, e
 	// Build/Load indexes
 	index, err := chunks.NewChunkIndex(storage, config.MaxChunkAge, config.Logger, config.Metrics)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "could not create index")
 	}
 
 	// Load current events in the event synk
-	err = events.ProcessOldSinks(storage, index)
+	err = events.ProcessOldSinks(config.Logger, storage, index)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "could not process old sinks")
 	}
 
 	keys, err := index.GetStateAt(time.Now())
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "could not get state at time")
 	}
 
 	return &temporalMap{
@@ -121,7 +122,7 @@ func (t *temporalMap) Get(ctx context.Context, timestamp time.Time, key string) 
 
 	state, err := t.index.GetStateAt(timestamp)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "can not get state at time")
 	}
 
 	return state[key], nil
@@ -144,7 +145,7 @@ func (t *temporalMap) GetAll(ctx context.Context, timestamp time.Time) (map[stri
 
 	state, err := t.index.GetStateAt(timestamp)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "can not get state at time")
 	}
 
 	return state, nil

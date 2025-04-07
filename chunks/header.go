@@ -7,6 +7,7 @@ import (
 	"github.com/hoyle1974/temporal/misc"
 	"github.com/hoyle1974/temporal/storage"
 	"github.com/patrickmn/go-cache"
+	"github.com/pkg/errors"
 )
 
 // This reprsents a chunk of data that would be stored on disk
@@ -24,7 +25,9 @@ type Header struct {
 func LoadHeader(ctx context.Context, s storage.System, id ChunkId) (Header, error) {
 	var h Header
 	if b, err := s.Read(ctx, id.HeaderKey()); err != nil {
-		return h, err
+		return h, errors.Wrap(err, "can not load header")
+	} else if b == nil {
+		return h, errors.New("header not found")
 	} else {
 		return h, misc.DecodeFromBytes(b, &h) // This might come to bite me in the future
 	}
@@ -40,9 +43,13 @@ func (h Header) ResponsibleFor(timestamp time.Time) bool {
 func (h Header) RemoveFromStorage(ctx context.Context, s storage.System) error {
 	err := s.Delete(ctx, h.Id.HeaderKey())
 	if err != nil {
-		return err
+		return errors.Wrap(err, "can not delete header")
 	}
-	return s.Delete(ctx, h.Id.ChunkKey())
+	err = s.Delete(ctx, h.Id.ChunkKey())
+	if err != nil {
+		return errors.Wrap(err, "can not delete chunk")
+	}
+	return nil
 }
 
 // Saves a header to the storage system
@@ -58,9 +65,13 @@ func (h Header) Save(ctx context.Context, s storage.System) error {
 	}
 	b, err := misc.EncodeToBytes(h)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "can not encode header to bytes to save")
 	}
-	return s.Write(ctx, h.Id.HeaderKey(), b)
+	err = s.Write(ctx, h.Id.HeaderKey(), b)
+	if err != nil {
+		return errors.Wrap(err, "can not save header")
+	}
+	return nil
 }
 
 // Loads the chunk associated with this header
@@ -83,7 +94,7 @@ func (h Header) LoadChunk(ctx context.Context, s storage.System) (Chunk, error) 
 	err = misc.DecodeFromBytes(b, &cd) // This might come to bite me in the future
 	if err != nil {
 		chunkCache.Set(string(h.Id), Chunk{}, cache.DefaultExpiration)
-		return Chunk{}, err
+		return Chunk{}, errors.Wrap(err, "can not decode chunk")
 	}
 
 	cd.populateNonSerializedData()

@@ -3,11 +3,12 @@ package storage
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"sync"
+
+	"github.com/pkg/errors"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -35,7 +36,7 @@ func (s *s3Storage) GetKeysWithPrefix(ctx context.Context, prefix string) ([]str
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to list S3 objects: %w", err)
+			return nil, errors.Errorf("failed to list S3 objects: %w", err)
 		}
 
 		for _, obj := range page.Contents {

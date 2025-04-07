@@ -1,10 +1,6 @@
 package temporal
 
-import (
-	"github.com/gabstv/go-bsdiff/pkg/bsdiff"
-	"github.com/gabstv/go-bsdiff/pkg/bspatch"
-)
-
+/*
 type Keyframe []byte
 
 type Diff []byte
@@ -29,3 +25,5 @@ func applyDiff(a Keyframe, diffData Diff) (Keyframe, error) {
 
 	return newfile, nil
 }
+
+*/
