@@ -8,7 +8,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/pkg/errors"
+	"github.com/cockroachdb/errors"
 
 	"github.com/hoyle1974/temporal/chunks"
 	"github.com/hoyle1974/temporal/misc"

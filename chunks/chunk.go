@@ -5,9 +5,9 @@ import (
 	"sort"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/hoyle1974/temporal/misc"
 	"github.com/hoyle1974/temporal/storage"
-	"github.com/pkg/errors"
 )
 
 type KVPair struct {

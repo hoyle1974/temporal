@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/hoyle1974/temporal/misc"
 	"github.com/hoyle1974/temporal/storage"
 	"github.com/patrickmn/go-cache"
-	"github.com/pkg/errors"
 )
 
 // This reprsents a chunk of data that would be stored on disk

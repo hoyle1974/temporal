@@ -1,9 +1,9 @@
 package chunks
 
 import (
+	"github.com/cockroachdb/errors"
 	"github.com/gabstv/go-bsdiff/pkg/bsdiff"
 	"github.com/gabstv/go-bsdiff/pkg/bspatch"
-	"github.com/pkg/errors"
 )
 
 type Diff []byte

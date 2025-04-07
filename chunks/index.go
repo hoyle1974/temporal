@@ -7,8 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pkg/errors"
-
+	"github.com/cockroachdb/errors"
 	"github.com/hoyle1974/temporal/misc"
 	"github.com/hoyle1974/temporal/storage"
 	"github.com/hoyle1974/temporal/telemetry"

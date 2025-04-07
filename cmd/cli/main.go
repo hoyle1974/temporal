@@ -9,6 +9,7 @@ import (
 )
 
 func main() {
+
 	source := flag.StringP("source", "s", "disk", "The source to work against")
 	uri := flag.StringP("uri", "u", ".", "The uri to the source")
 
