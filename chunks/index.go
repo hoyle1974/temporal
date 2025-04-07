@@ -51,20 +51,20 @@ func NewChunkIndex(storage storage.System, maxChunkAge time.Duration, logger tel
 		return ci, nil
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return ci, errors.Wrap(err, "can not read start.idx")
+		return ci, errors.Wrap(err, "NewChunkIndex: can not read start.idx")
 	}
 	if startBin != nil || len(startBin) > 0 {
 		startTimeKey := string(startBin)
 
 		t, err := time.Parse(layout, startTimeKey)
 		if err != nil {
-			return ci, errors.Wrap(err, "can not parse start.idx")
+			return ci, errors.Wrap(err, "NewChunkIndex: can not parse start.idx")
 		}
 		t = t.UTC()
 
 		ci.minTime = t
 	} else {
-		return ci, errors.New("invalid start.idx")
+		return ci, errors.New("NewChunkIndex: invalid start.idx")
 	}
 
 	// Load all headers
@@ -72,7 +72,7 @@ func NewChunkIndex(storage storage.System, maxChunkAge time.Duration, logger tel
 	for currChunkId != "" {
 		h, err := LoadHeader(context.Background(), storage, currChunkId)
 		if err != nil {
-			return ci, errors.Wrap(err, "can not load header")
+			return ci, errors.Wrap(err, "NewChunkIndex: can not load header")
 		}
 		ci.headers = append(ci.headers, h)
 		currChunkId = h.Next
@@ -98,6 +98,7 @@ func (ci *index) UpdateIndex(header Header) error {
 		if err != nil {
 			return errors.Wrap(err, "can not write start.idx")
 		}
+		defer header.Save(context.Background(), ci.storage)
 	}
 
 	ci.headers = append(ci.headers, header)

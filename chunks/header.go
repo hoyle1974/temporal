@@ -25,9 +25,9 @@ type Header struct {
 func LoadHeader(ctx context.Context, s storage.System, id ChunkId) (Header, error) {
 	var h Header
 	if b, err := s.Read(ctx, id.HeaderKey()); err != nil {
-		return h, errors.Wrap(err, "can not load header")
+		return h, errors.Wrap(err, "LoadHeader: can not load header")
 	} else if b == nil {
-		return h, errors.New("header not found")
+		return h, errors.New("LoadHeader: header is empty")
 	} else {
 		return h, misc.DecodeFromBytes(b, &h) // This might come to bite me in the future
 	}

@@ -16,6 +16,11 @@ type diskStorage struct {
 
 // NewDiskStorage initializes a new DiskStorage instance
 func NewDiskStorage(baseDir string) *diskStorage {
+
+	if err := os.MkdirAll(baseDir, os.ModePerm); err != nil {
+		return nil
+	}
+
 	return &diskStorage{BaseDir: baseDir}
 }
 
