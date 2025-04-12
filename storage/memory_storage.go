@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"os"
 	"strings"
 	"sync"
 
@@ -81,7 +80,7 @@ func (m *memoryStorage) Read(ctx context.Context, key string) ([]byte, error) {
 
 	data, ok := m.data[key]
 	if !ok {
-		return data, os.ErrNotExist
+		return data, ErrDoesNotExist
 	}
 
 	return data, nil

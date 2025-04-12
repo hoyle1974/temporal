@@ -96,7 +96,14 @@ func (ds *diskStorage) Read(ctx context.Context, key string) ([]byte, error) {
 	}
 
 	filePath := filepath.Join(ds.BaseDir, key)
-	return os.ReadFile(filePath)
+	b, err := os.ReadFile(filePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrDoesNotExist
+		}
+		return nil, errors.Wrap(err, "can not read file")
+	}
+	return b, nil
 }
 
 // Delete deletes a file for a given key

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"io"
 )
 
@@ -9,6 +10,8 @@ type StreamWriter interface {
 	io.Writer
 	io.Closer
 }
+
+var ErrDoesNotExist = errors.New("does not exist")
 
 // System defines the operations for interacting with the storage backend
 type System interface {

@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 )
 
 type s3Storage struct {
@@ -108,13 +109,22 @@ func (s *s3Storage) Read(ctx context.Context, key string) ([]byte, error) {
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		return nil, err
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "NoSuchKey" {
+			// Handle the "file doesn't exist" case cleanly
+			return nil, ErrDoesNotExist
+		}
+		// Unexpected error
+		return nil, fmt.Errorf("failed to get object: %w", err)
 	}
 	defer resp.Body.Close()
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, io.EOF) {
+			return nil, ErrDoesNotExist
+		}
+		return nil, errors.Wrap(err, "can not read file")
 	}
 	return data, nil
 }

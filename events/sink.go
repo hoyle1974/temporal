@@ -47,7 +47,9 @@ type sink struct {
 	metrics           telemetry.Metrics
 }
 
-// Append implements Sink.
+// Append implements Sink.  It will append the event to the current chunk stream.
+// If the chunk becomes too big, it will flush the current chunk and start a new
+// one.
 func (s *sink) Append(event Event) (bool, error) {
 	b, err := misc.EncodeToBytes(event)
 	if err != nil {
