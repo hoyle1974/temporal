@@ -62,44 +62,66 @@ func (s *s3Storage) Write(ctx context.Context, key string, data []byte) error {
 type s3StreamWriter struct {
 	writer *io.PipeWriter
 	wg     *sync.WaitGroup
+	err    error
+	once   sync.Once
 }
 
 func (s *s3StreamWriter) Write(data []byte) (int, error) {
-	return s.writer.Write(data)
+	n, err := s.writer.Write(data)
+	if err != nil {
+		log.Printf("S3 stream write error: %v", err)
+	}
+	return n, err
 }
 
 func (s *s3StreamWriter) Close() error {
-	// Close writer to indicate the upload is complete
-	s.writer.Close()
-	s.wg.Wait()
-
-	return nil
+	s.once.Do(func() {
+		err := s.writer.Close()
+		if err != nil {
+			log.Printf("Error closing S3 pipe writer: %v", err)
+		}
+		s.wg.Wait()
+	})
+	return s.err
 }
-
-// This function will return an s3StreamWriter that can be used to stream data to an S3 bucket
-// and close when it's done.
 func (s *s3Storage) BeginStream(ctx context.Context, key string) StreamWriter {
 	pipeReader, pipeWriter := io.Pipe()
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
+	stream := &s3StreamWriter{
+		writer: pipeWriter,
+		wg:     wg,
+	}
+
 	go func() {
 		defer wg.Done()
-		_, err := s.Client.PutObject(context.TODO(), &s3.PutObjectInput{
-			Bucket: aws.String(s.BucketName),
-			Key:    aws.String(key),
-			Body:   pipeReader,
+		defer pipeReader.Close()
+
+		_, err := s.Client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:            aws.String(s.BucketName),
+			Key:               aws.String(key),
+			Body:              pipeReader,
+			ChecksumAlgorithm: "",
+		}, func(o *s3.Options) {
+			o.Retryer = aws.NopRetryer{} // ← Disable retries!
 		})
+
 		if err != nil {
 			log.Printf("S3 upload failed: %v", err)
+
+			// Set the error so Close() can return it
+			stream.err = err
+
+			// Close the writer to notify any waiting Write calls
+			// This will make .Write() start returning errors
+			pipeWriter.CloseWithError(err)
+		} else {
+			log.Printf("S3 upload to %s/%s completed", s.BucketName, key)
 		}
-		pipeReader.Close() // Ensure reader is closed once done
 	}()
 
-	return &s3StreamWriter{
-		pipeWriter,
-		wg,
-	}
+	return stream
 }
 
 // Read downloads data from an S3 bucket for a given key

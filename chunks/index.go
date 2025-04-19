@@ -2,7 +2,6 @@ package chunks
 
 import (
 	"context"
-	"os"
 	"sort"
 	"sync"
 	"time"
@@ -35,10 +34,10 @@ type index struct {
 	logger      telemetry.Logger
 }
 
-func NewChunkIndex(storage storage.System, maxChunkAge time.Duration, logger telemetry.Logger, metrics telemetry.Metrics) (Index, error) {
+func NewChunkIndex(s storage.System, maxChunkAge time.Duration, logger telemetry.Logger, metrics telemetry.Metrics) (Index, error) {
 	logger.Info("NewChunkIndex")
 	ci := &index{
-		storage:     storage,
+		storage:     s,
 		headers:     []Header{},
 		maxChunkAge: maxChunkAge,
 		metrics:     metrics,
@@ -46,11 +45,11 @@ func NewChunkIndex(storage storage.System, maxChunkAge time.Duration, logger tel
 	}
 
 	// If start.idx doesn't exist, then we never started
-	startBin, err := storage.Read(context.Background(), "start.idx")
-	if errors.Is(err, os.ErrNotExist) {
+	startBin, err := s.Read(context.Background(), "start.idx")
+	if errors.Is(err, storage.ErrDoesNotExist) {
 		return ci, nil
 	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err != nil {
 		return ci, errors.Wrap(err, "NewChunkIndex: can not read start.idx")
 	}
 	if startBin != nil || len(startBin) > 0 {
@@ -70,7 +69,7 @@ func NewChunkIndex(storage storage.System, maxChunkAge time.Duration, logger tel
 	// Load all headers
 	currChunkId := NewChunkId(ci.minTime)
 	for currChunkId != "" {
-		h, err := LoadHeader(context.Background(), storage, currChunkId)
+		h, err := LoadHeader(context.Background(), s, currChunkId)
 		if err != nil {
 			return ci, errors.Wrap(err, "NewChunkIndex: can not load header")
 		}
