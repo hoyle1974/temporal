@@ -45,6 +45,7 @@ type sink struct {
 	meta              Meta
 	logger            telemetry.Logger
 	metrics           telemetry.Metrics
+	lastFlush         time.Time
 }
 
 // Append implements Sink.  It will append the event to the current chunk stream.
@@ -70,12 +71,13 @@ func (s *sink) Append(event Event) (bool, error) {
 	s.estimator.OnWriteData(int64(bytesWritten))
 	s.totalBytesWritten += int64(bytesWritten)
 
-	if s.estimator.ShouldTryFlush() {
+	if s.estimator.ShouldTryFlush() || time.Since(s.lastFlush) > 10*time.Second {
 		// Chunk this and start a new event stream
 		err = s.FlushSink(event.Timestamp)
 		if err != nil {
 			return true, errors.Wrap(err, "can not flush sink")
 		}
+		s.lastFlush = time.Now()
 	}
 
 	return false, nil
@@ -127,7 +129,7 @@ func (s *sink) FlushSink(timestamp time.Time) error {
 		s.key = key
 	}()
 
-	// We may have more then 1 event file
+	// We may have more than 1 event file
 	keys, err := s.meta.GetEventFiles()
 	if err != nil {
 		return errors.Wrap(err, "can not get event files")

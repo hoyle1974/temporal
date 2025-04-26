@@ -1,12 +1,14 @@
 package storage
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/cockroachdb/errors"
 
@@ -60,43 +62,46 @@ func (s *s3Storage) Write(ctx context.Context, key string, data []byte) error {
 }
 
 type s3StreamWriter struct {
-	writer *io.PipeWriter
-	wg     *sync.WaitGroup
-	err    error
-	once   sync.Once
+	writer     *bufio.Writer
+	pipeWriter *io.PipeWriter
+	wg         *sync.WaitGroup
+	lastFlush  time.Time
 }
 
+// Function to write data to S3 while controlling flushing
 func (s *s3StreamWriter) Write(data []byte) (int, error) {
 	n, err := s.writer.Write(data)
 	if err != nil {
-		log.Printf("S3 stream write error: %v", err)
+		return n, err
 	}
-	return n, err
+
+	return n, nil
 }
 
 func (s *s3StreamWriter) Close() error {
-	s.once.Do(func() {
-		err := s.writer.Close()
-		if err != nil {
-			log.Printf("Error closing S3 pipe writer: %v", err)
-		}
-		s.wg.Wait()
-	})
-	return s.err
+	// Ensure any remaining data is flushed before closing
+	err := s.writer.Flush()
+	if err != nil {
+		return err
+	}
+	// Close the pipeWriter to signal the end of data
+	s.pipeWriter.Close()
+	s.wg.Wait()
+	return nil
 }
+
+// BeginStream creates a new pipe for streaming data to S3
 func (s *s3Storage) BeginStream(ctx context.Context, key string) StreamWriter {
 	pipeReader, pipeWriter := io.Pipe()
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 
-	stream := &s3StreamWriter{
-		writer: pipeWriter,
-		wg:     wg,
-	}
+	// Create a buffered writer to manage flushing
+	writer := bufio.NewWriter(pipeWriter)
 
+	// Goroutine to upload the data to S3
 	go func() {
 		defer wg.Done()
-		defer pipeReader.Close()
 
 		_, err := s.Client.PutObject(ctx, &s3.PutObjectInput{
 			Bucket:            aws.String(s.BucketName),
@@ -104,24 +109,24 @@ func (s *s3Storage) BeginStream(ctx context.Context, key string) StreamWriter {
 			Body:              pipeReader,
 			ChecksumAlgorithm: "",
 		}, func(o *s3.Options) {
-			o.Retryer = aws.NopRetryer{} // ← Disable retries!
+			o.Retryer = aws.NopRetryer{} // Disable retries
 		})
 
 		if err != nil {
-			log.Printf("S3 upload failed: %v", err)
-
-			// Set the error so Close() can return it
-			stream.err = err
-
-			// Close the writer to notify any waiting Write calls
-			// This will make .Write() start returning errors
-			pipeWriter.CloseWithError(err)
-		} else {
-			log.Printf("S3 upload to %s/%s completed", s.BucketName, key)
+			log.Printf("S3 upload failed: %v\n", err)
 		}
+
+		// Ensure the reader is closed when done
+		pipeReader.Close()
 	}()
 
-	return stream
+	// Return a new s3StreamWriter to write data
+	return &s3StreamWriter{
+		writer:     writer,
+		pipeWriter: pipeWriter,
+		wg:         wg,
+		lastFlush:  time.Now(),
+	}
 }
 
 // Read downloads data from an S3 bucket for a given key

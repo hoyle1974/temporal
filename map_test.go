@@ -460,7 +460,7 @@ func _TestMap8(t *testing.T) {
 func TestMapExpiration(t *testing.T) {
 
 	s := storage.NewMemoryStorage()
-	m, err := NewMapWithConfig(s, MapConfig{MaxChunkTargetSize: 100, MaxChunkAge: time.Second})
+	m, err := NewMapWithConfig(s, MapConfig{MaxChunkTargetSize: 1, MaxChunkAge: time.Second})
 	if err != nil {
 		t.Fatalf("could not create map: %v", err)
 	}
@@ -468,30 +468,31 @@ func TestMapExpiration(t *testing.T) {
 		t.Fatalf("map was nil")
 	}
 
-	start := time.Now()
+	writeTime1 := time.Now()
+	writeTime2 := writeTime1.Add(time.Second)
+	writeTime3 := writeTime1.Add(time.Second * 2)
+	writeTime4 := writeTime1.Add(time.Second * 3)
+	writeTime5 := writeTime1.Add(time.Second * 4)
 
-	idx := 0
-	for t := 0; t < 2000; t++ {
-		m.Set(context.Background(), start.Add(time.Millisecond*time.Duration(idx)), "foo", []byte(fmt.Sprintf("bar:%d", t)))
-		idx++
-	}
-	keys, err := s.GetKeysWithPrefix(context.Background(), "")
+	m.Set(context.Background(), writeTime1, "foo", []byte("bar1"))
+	m.Set(context.Background(), writeTime2, "foo", []byte("bar2"))
+	m.Set(context.Background(), writeTime3, "foo", []byte("bar3"))
+	m.Set(context.Background(), writeTime4, "foo", []byte("bar4"))
+	m.Set(context.Background(), writeTime5, "foo", []byte("bar5"))
+
+	m, err = NewMapWithConfig(s, MapConfig{MaxChunkTargetSize: 1, MaxChunkAge: time.Second})
 	if err != nil {
-		t.Fatalf("could not get map: %v", err)
+		t.Fatalf("could not create map: %v", err)
 	}
-	count1 := len(keys)
+	if m == nil {
+		t.Fatalf("map was nil")
+	}
 
-	for t := 0; t < 2000; t++ {
-		m.Set(context.Background(), start.Add(time.Millisecond*time.Duration(idx)), "foo", []byte(fmt.Sprintf("bar:%d", t)))
-		idx++
-	}
-	keys, err = s.GetKeysWithPrefix(context.Background(), "")
+	value, err := m.Get(context.Background(), writeTime1, "foo")
 	if err != nil {
-		t.Fatalf("could not get map: %v", err)
+		t.Fatalf("%v", err)
 	}
-	count2 := len(keys)
 
-	fmt.Println(count1)
-	fmt.Println(count2)
+	fmt.Println(string(value))
 
 }

@@ -119,6 +119,13 @@ func (ci *index) UpdateIndex(header Header) error {
 			if ci.headers[idx].Max.Before(minValidTime) {
 				ci.headers[idx].RemoveFromStorage(context.Background(), ci.storage)
 				startIdx = idx + 1
+
+				// Adjust start index
+				err := ci.storage.Write(context.Background(), "start.idx", []byte(ci.headers[startIdx].Min.UTC().Format(layout)))
+				if err != nil {
+					return errors.Wrap(err, "can not write start.idx")
+				}
+
 				break
 			}
 		}
